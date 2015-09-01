@@ -8,7 +8,8 @@ SUBDIRS   = \
     extensionsystem \
     utils \
     tlmapcontrol \
-    qwt
+    qwt \
+    githubreleaseapi
 
 SDL {
 SUBDIRS += sdlgamepad
