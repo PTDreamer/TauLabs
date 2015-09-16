@@ -1016,6 +1016,10 @@ endif
 package:
 	$(V1) cd $@ && $(MAKE) --no-print-directory $@
 
+.PHONY: package_flight
+package_flight:
+	$(V1) cd package && $(MAKE) --no-print-directory $@
+
 .PHONY: standalone
 standalone:
 	$(V1) cd package && $(MAKE) --no-print-directory $@
