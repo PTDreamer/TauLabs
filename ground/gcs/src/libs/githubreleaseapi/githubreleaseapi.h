@@ -40,6 +40,7 @@
 #include <QMimeDatabase>
 #include <QFileInfo>
 #include <QTableWidgetItem>
+#include <QPointer>
 
 #if defined (GITHUBRELEASEAPI_LIBRARY)
 #define GITHUBRELEASEAPI_EXPORT Q_DECL_EXPORT
@@ -53,6 +54,7 @@ class GITHUBRELEASEAPI_EXPORT gitHubReleaseAPI : public QObject
 public:
     gitHubReleaseAPI(QObject *parent);
     void setRepo(QString owner, QString repo);
+    void setRepo(QString url);
     enum errors { NETWORK_ERROR, TIMEOUT_ERROR, PARSING_ERROR, UNDEFINED_ERROR, NO_ERROR };
     struct GitHubUser {
         QString login;
@@ -149,9 +151,14 @@ private:
     QEventLoop eventLoop;
     QTimer timeOutTimer;
     errors lastError;
+    QPointer<QNetworkReply> currentNetworkReply;
 private slots:
     void onLogInfo(QString);
     void onLogError(QString);
+
+public slots:
+    void abortOperation();
+
 signals:
     void fileDownloaded();
     void logInfo(QString);

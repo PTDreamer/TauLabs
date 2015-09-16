@@ -49,6 +49,13 @@ void gitHubReleaseAPI::setRepo(QString owner, QString repo)
     m_url = QString("https://api.github.com/repos/%0/%1/").arg(owner).arg(repo);
 }
 
+void gitHubReleaseAPI::setRepo(QString url)
+{
+    m_url = url;
+    if(!url.endsWith("/"))
+        m_url = m_url + "/";
+}
+
 QHash<int, gitHubReleaseAPI::release> gitHubReleaseAPI::getReleases()
 {
     QHash<int, gitHubReleaseAPI::release> ret;
@@ -86,6 +93,8 @@ QHash<int, gitHubReleaseAPI::release> gitHubReleaseAPI::getReleases()
     }
     reply->deleteLater();
     setLastError(NO_ERROR);
+    if(ret.values().count() == 0)
+        setLastError(UNDEFINED_ERROR);
     emit logInfo("Releases fetching finished");
     return ret;
 }
@@ -133,7 +142,6 @@ QByteArray gitHubReleaseAPI::downloadAsset(int id)
     request.setUrl(workUrl);
     timeOutTimer.start();
     QNetworkReply *reply = m_WebCtrl.get(request);
-    connect(reply, SIGNAL(downloadProgress(qint64,qint64)), SIGNAL(downloadProgress(qint64,qint64)));
     eventLoop.exec();
     if(!timeOutTimer.isActive()) {
         emit logError("Timeout while getting release");
@@ -157,7 +165,6 @@ QByteArray gitHubReleaseAPI::downloadAsset(int id)
     request.setUrl(asset.browser_download_url);
     timeOutTimer.start();
     reply = m_WebCtrl.get(request);
-    connect(reply, SIGNAL(downloadProgress(qint64,qint64)), SIGNAL(downloadProgress(qint64,qint64)));
     eventLoop.exec();
     if(!timeOutTimer.isActive()) {
         emit logError("Timeout while getting release asset");
@@ -177,6 +184,7 @@ QByteArray gitHubReleaseAPI::downloadAsset(int id)
         request.setUrl(redirectUrl);
         timeOutTimer.start();
         reply = m_WebCtrl.get(request);
+        currentNetworkReply = reply;
         connect(reply, SIGNAL(downloadProgress(qint64,qint64)), SIGNAL(downloadProgress(qint64,qint64)));
         eventLoop.exec();
         if(reply->error() !=QNetworkReply::NoError) {
@@ -582,6 +590,13 @@ void gitHubReleaseAPI::onLogInfo(QString str)
 void gitHubReleaseAPI::onLogError(QString str)
 {
     qDebug() << "ERROR:" << str;
+}
+
+void gitHubReleaseAPI::abortOperation()
+{
+    if(currentNetworkReply.isNull())
+        return;
+    currentNetworkReply.data()->abort();
 }
 
 gitHubReleaseAPI::release gitHubReleaseAPI::processRelease(QJsonObject obj)
