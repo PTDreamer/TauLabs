@@ -17,8 +17,12 @@ FLIGHT_FW			:= coptercontrol sparky sparky2 sparkybgc revomini pipxtreme quanton
 
 DEB_BUILD_DIR		:= $(ROOT_DIR)/debian
 
+SED_AUTHOR_NAME		= $(shell git config user.name)
+SED_AUTHOR_EMAIL	= $(shell git config user.email)
+SED_AUTHOR		= $(SED_AUTHOR_NAME) <$(SED_AUTHOR_EMAIL)>
 SED_DATE_STRG		= $(shell date -R)
-SED_SCRIPT			= s/<VERSION>/$(VERSION_FULL)/;s/<DATE>/$(SED_DATE_STRG)/
+SED_BIN_ROOT		= $(ROOT_DIR)/build/$(DEB_PACKAGE_NAME)
+SED_SCRIPT		= s|<VERSION>|$(VERSION_FULL)|;s|<DATE>|$(SED_DATE_STRG)|;s|<AUTHOR>|$(SED_AUTHOR)|;s|<BIN_ROOT>|$(SED_BIN_ROOT)|
 
 DEB_CFG_CMN			:= $(ROOT_DIR)/package/linux/deb_common
 DEB_CFG_CMN_FILES	:= $(shell ls $(DEB_CFG_CMN))
@@ -42,7 +46,10 @@ DEB_PACKAGE_NAME	:= taulabs_$(VERSION_FULL)_$(DEB_PLATFORM)
 
 QT_PLUGINS_USED		:= imageformats platforms sqldrivers xcbglintegrations
 
-standalone: gcs
+TEMPDIR := $(shell mktemp -d)
+PORTABLE_DIR = $(TEMPDIR)/gcs
+
+standalone: | gcs
 	@echo $@ starting
 	@echo Copying Qt5 plugins libraries
 	$(V1) mkdir -p "$(ROOT_DIR)/build/ground/gcs/lib/taulabs/qtplugins"
@@ -64,20 +71,40 @@ standalone: gcs
 	| sed -e '/^[^\t]/ d; s/^\t\(.* => \)\?\([^ ]*\) (.*/\2/g'| grep "Qt5" | grep -v "build/ground" | sort | uniq | xargs -I '{}' cp -v -f '{}' $(ROOT_DIR)/build/ground/gcs/lib/taulabs
 	@echo Copying qt.conf file
 	$(V1)cp -v $(ROOT_DIR)/package/linux/qt.conf $(ROOT_DIR)/build/ground/gcs/bin/
+	
+portable_package: clean_gcs
+	$(V1)tar -cvJf $(ROOT_DIR)/build/$(DEB_PACKAGE_NAME).tar.xz -C $(ROOT_DIR)/build/$(DEB_PACKAGE_NAME) .
+	$(V1)rm -rf $(ROOT_DIR)/build/$(DEB_PACKAGE_NAME)
 
-linux_deb_package: deb_build standalone
+clean_gcs: | tlfw_resource gcs standalone
+	@echo $@ starting
+	$(V1)mkdir -p $(ROOT_DIR)/build/$(DEB_PACKAGE_NAME)/bin
+	$(V1)mkdir -p $(ROOT_DIR)/build/$(DEB_PACKAGE_NAME)/share
+	$(V1)mkdir -p $(ROOT_DIR)/build/$(DEB_PACKAGE_NAME)/lib
+	$(V1)cp -v -R $(ROOT_DIR)/build/ground/gcs/bin $(ROOT_DIR)/build/$(DEB_PACKAGE_NAME)
+	$(V1)cp -v -R $(ROOT_DIR)/build/ground/gcs/share $(ROOT_DIR)/build/$(DEB_PACKAGE_NAME)
+	$(V1)cp -v -R $(ROOT_DIR)/build/ground/gcs/lib $(ROOT_DIR)/build/$(DEB_PACKAGE_NAME)
+	$(V1)cp -v $(ROOT_DIR)/HISTORY.txt $(ROOT_DIR)/build/$(DEB_PACKAGE_NAME)
+	$(V1)cp -v $(ROOT_DIR)/KNOWN_ISSUES.txt $(ROOT_DIR)/build/$(DEB_PACKAGE_NAME)
+	$(V1)cp -v $(ROOT_DIR)/CREDITS.txt $(ROOT_DIR)/build/$(DEB_PACKAGE_NAME)
+	$(V1)cp -v $(ROOT_DIR)/LICENSE.txt $(ROOT_DIR)/build/$(DEB_PACKAGE_NAME)
+	$(V1)find $(ROOT_DIR)/build/$(DEB_PACKAGE_NAME) -type f -name "*Makefile" -exec rm -f {} \;
+	$(V1)find $(ROOT_DIR)/build/$(DEB_PACKAGE_NAME) -type f -name "*qmake.cache" -exec rm -f {} \;
+	$(V1)find $(ROOT_DIR)/build/$(DEB_PACKAGE_NAME) -type f -name "*udp_test" -exec rm -f {} \;
+	$(V1)find $(ROOT_DIR)/build/$(DEB_PACKAGE_NAME) -type f -name "*gcsversioninfo.h" -exec rm -f {} \;
+	$(V1)cp -v $(ROOT_DIR)/package/linux/taulabsgcs $(ROOT_DIR)/build/$(DEB_PACKAGE_NAME)
+	$(V1)cd $(ROOT_DIR)/build/$(DEB_PACKAGE_NAME) && find . -type f -print > $(ROOT_DIR)/build/$(DEB_PACKAGE_NAME)/filelist.lst
+
+linux_deb_package: deb_build clean_gcs
 	@echo $@ starting
 	cd .. && dpkg-buildpackage -b -us -uc
 	$(V1)mv $(ROOT_DIR)/../$(DEB_PACKAGE_NAME).deb $(BUILD_DIR)
 	$(V1)mv $(ROOT_DIR)/../$(DEB_PACKAGE_NAME).changes $(BUILD_DIR)
 	$(V1)rm -rf $(DEB_BUILD_DIR)
 
-deb_build: | $(DEB_BUILD_DIR) $(ALL_DEB_FILES) $(BUILD_DIR)/build 
+deb_build: | $(DEB_BUILD_DIR) $(ALL_DEB_FILES)
 	@echo $@ starting
-	$(V1)$(shell echo $(FW_DIR) > $(BUILD_DIR)/package_dir)
-	$(V1)sed -i -e "$(SED_SCRIPT)" $(DEB_BUILD_DIR)/changelog
-
-$(BUILD_DIR)/build: package_flight package_matlab
+	$(V1)sed -i -e "$(SED_SCRIPT)" $(DEB_BUILD_DIR)/*
 
 $(DEB_BUILD_DIR): 
 	@echo $@ starting
@@ -87,7 +114,7 @@ $(foreach cpfile, $(DEB_CFG_CMN_FILES), $(eval $(call CP_DEB_FILES_TEMPLATE,$(cp
 
 $(foreach cpfile, $(DEB_MACHINE_FILES), $(eval $(call CP_DEB_FILES_TEMPLATE,$(cpfile),$(DEB_BUILD_DIR),$(DEB_MACHINE_DIR))))
 
-gcs: uavobjects_gcs
+gcs: uavobjects_gcs | tlfw_resource
 	@echo "Linux Package Make of GCS."
 	$(V1) $(MAKE) -C $(ROOT_DIR) GCS_BUILD_CONF=release $@
 

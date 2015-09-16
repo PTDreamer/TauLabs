@@ -1023,6 +1023,10 @@ package_flight:
 .PHONY: standalone
 standalone:
 	$(V1) cd package && $(MAKE) --no-print-directory $@
+	
+.PHONY: portable_package
+portable_package:
+	$(V1) cd package && $(MAKE) --no-print-directory $@
 
 .PHONY: package_resources
 package_resources:
