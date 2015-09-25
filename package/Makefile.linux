@@ -4,27 +4,26 @@
 
 define CP_DEB_FILES_TEMPLATE
 .PHONY: $(2)/$(1)
-$(2)/$(1): $(3)/$(1)
+$(2)/$(1): $(3)/$(1) $(DEB_BUILD_DIR)
 	$(V1)cp -a $$< $$@
 endef
 
 # Update this number for every formal release.  The Deb packaging system relies on this to know to update a
 # package or not.  Otherwise, the user has to uninstall first.
-VERNUM				:= 0.1.0
-VERSION_FULL		:= $(VERNUM)-$(PACKAGE_LBL)
+VERSION_FULL		:= $(PACKAGE_LBL)-1
 
-FLIGHT_FW			:= coptercontrol sparky sparky2 sparkybgc revomini pipxtreme quanton flyingf3 naze32 aq32
+FLIGHT_FW		:= coptercontrol sparky sparky2 sparkybgc revomini pipxtreme quanton flyingf3 naze32 aq32
 
-DEB_BUILD_DIR		:= $(ROOT_DIR)/debian
+DEB_BUILD_DIR		:= $(BUILD_DIR)/debian
 
 SED_AUTHOR_NAME		= $(shell git config user.name)
 SED_AUTHOR_EMAIL	= $(shell git config user.email)
 SED_AUTHOR		= $(SED_AUTHOR_NAME) <$(SED_AUTHOR_EMAIL)>
 SED_DATE_STRG		= $(shell date -R)
-SED_BIN_ROOT		= $(ROOT_DIR)/build/$(DEB_PACKAGE_NAME)
-SED_SCRIPT		= s|<VERSION>|$(VERSION_FULL)|;s|<DATE>|$(SED_DATE_STRG)|;s|<AUTHOR>|$(SED_AUTHOR)|;s|<BIN_ROOT>|$(SED_BIN_ROOT)|
+SED_BIN_ROOT		= $(PACKAGE_DIR)/$(DEB_PACKAGE_DIR)
+SED_SCRIPT		= s|<VERSION>|$(VERSION_FULL)|;s|<DATE>|$(SED_DATE_STRG)|;s|<AUTHOR>|$(SED_AUTHOR)|;s|<BIN_ROOT>|$(SED_BIN_ROOT)|;s|<PROJECT_ROOT>|$(ROOT_DIR)|;s|<TARGET_ROOT>|$(DEB_BUILD_DIR)|g
 
-DEB_CFG_CMN			:= $(ROOT_DIR)/package/linux/deb_common
+DEB_CFG_CMN		:= $(ROOT_DIR)/package/linux/deb_common
 DEB_CFG_CMN_FILES	:= $(shell ls $(DEB_CFG_CMN))
 DEB_CFG_I386_DIR	:= $(ROOT_DIR)/package/linux/deb_i386
 DEB_CFG_I386_FILES	:= $(shell ls $(DEB_CFG_I386_DIR))
@@ -42,69 +41,63 @@ endif
 ALL_DEB_FILES  = $(foreach f, $(DEB_CFG_CMN_FILES), $(DEB_BUILD_DIR)/$(f))
 ALL_DEB_FILES += $(foreach f, $(DEB_MACHINE_FILES), $(DEB_BUILD_DIR)/$(f))
 
-DEB_PACKAGE_NAME	:= taulabs_$(VERSION_FULL)_$(DEB_PLATFORM)
+DEB_PACKAGE_DIR	:= taulabsgcs_$(DEB_PLATFORM)-$(VERSION_FULL)
+DEB_PACKAGE_NAME:= taulabs_$(VERSION_FULL)_$(DEB_PLATFORM)
 
 QT_PLUGINS_USED		:= imageformats platforms sqldrivers xcbglintegrations
-
-TEMPDIR := $(shell mktemp -d)
-PORTABLE_DIR = $(TEMPDIR)/gcs
 
 standalone: | gcs
 	@echo $@ starting
 	@echo Copying Qt5 plugins libraries
-	$(V1) mkdir -p "$(ROOT_DIR)/build/ground/gcs/lib/taulabs/qtplugins"
-	$(V1)cp -v -R $(QT_PLUGINS_DIR)/imageformats $(ROOT_DIR)/build/ground/gcs/lib/taulabs/qtplugins/
-	$(V1)cp -v -R $(QT_PLUGINS_DIR)/platforms $(ROOT_DIR)/build/ground/gcs/lib/taulabs/qtplugins/
-	$(V1) mkdir -p "$(ROOT_DIR)/build/ground/gcs/lib/taulabs/qtplugins/sqldrivers"
-	$(V1)cp -v -R $(QT_PLUGINS_DIR)/sqldrivers/libqsqlite.so $(ROOT_DIR)/build/ground/gcs/lib/taulabs/qtplugins/sqldrivers
-	$(V1)cp -v -R $(QT_PLUGINS_DIR)/xcbglintegrations $(ROOT_DIR)/build/ground/gcs/lib/taulabs/qtplugins/
-	$(V1) mkdir -p "$(ROOT_DIR)/build/ground/gcs/lib/taulabs/qml"
-	$(V1)cp -v -R $(QT_PLUGINS_DIR)/../qml/QtQuick.2 $(ROOT_DIR)/build/ground/gcs/lib/taulabs/qml/
-	$(V1)cp -v -R $(QT_PLUGINS_DIR)/../qml/QtQuick $(ROOT_DIR)/build/ground/gcs/lib/taulabs/qml/
+	$(V1) mkdir -p "$(BUILD_DIR)/ground/gcs/lib/taulabs/qtplugins"
+	$(V1)cp -v -R $(QT_PLUGINS_DIR)/imageformats $(BUILD_DIR)/ground/gcs/lib/taulabs/qtplugins/
+	$(V1)cp -v -R $(QT_PLUGINS_DIR)/platforms $(BUILD_DIR)/ground/gcs/lib/taulabs/qtplugins/
+	$(V1) mkdir -p "$(BUILD_DIR)/ground/gcs/lib/taulabs/qtplugins/sqldrivers"
+	$(V1)cp -v -R $(QT_PLUGINS_DIR)/sqldrivers/libqsqlite.so $(BUILD_DIR)/ground/gcs/lib/taulabs/qtplugins/sqldrivers
+	$(V1)cp -v -R $(QT_PLUGINS_DIR)/xcbglintegrations $(BUILD_DIR)/ground/gcs/lib/taulabs/qtplugins/
+	$(V1) mkdir -p "$(BUILD_DIR)/ground/gcs/lib/taulabs/qml"
+	$(V1)cp -v -R $(QT_PLUGINS_DIR)/../qml/QtQuick.2 $(BUILD_DIR)/ground/gcs/lib/taulabs/qml/
+	$(V1)cp -v -R $(QT_PLUGINS_DIR)/../qml/QtQuick $(BUILD_DIR)/ground/gcs/lib/taulabs/qml/
 	@echo Copying platform libraries dependencies
 	$(V1)find $(QT_PLUGINS_DIR)/platforms/ -name '*.so'	| xargs -I '{}' ldd '{}'| sed -e '/^[^\t]/ d; s/^\t\(.* => \)\?\([^ ]*\) (.*/\2/g' \
-	| grep "Qt5" | grep -v "build/ground" | sort | uniq | xargs -I '{}' cp -v -f '{}' $(ROOT_DIR)/build/ground/gcs/lib/taulabs 
+	| grep "Qt5" | grep -v "build/ground" | sort | uniq | xargs -I '{}' cp -v -f '{}' $(BUILD_DIR)/ground/gcs/lib/taulabs 
 	$(V1)find $(QT_PLUGINS_DIR)/../qml/QtQuick/ -name '*.so'	| xargs -I '{}' ldd '{}'| sed -e '/^[^\t]/ d; s/^\t\(.* => \)\?\([^ ]*\) (.*/\2/g' \
-	| grep "Qt5" | grep -v "build/ground" | sort | uniq | xargs -I '{}' cp -v -f '{}' $(ROOT_DIR)/build/ground/gcs/lib/taulabs 
+	| grep "Qt5" | grep -v "build/ground" | sort | uniq | xargs -I '{}' cp -v -f '{}' $(BUILD_DIR)/ground/gcs/lib/taulabs 
 	@echo Searching and copying used Qt5 libraries
-	$(V1)find $(ROOT_DIR)/build/ground/gcs/bin/taulabsgcs.bin $(ROOT_DIR)/build/ground/gcs/lib/taulabs/plugins/TauLabs/*.so -exec ldd {} \; \
-	| sed -e '/^[^\t]/ d; s/^\t\(.* => \)\?\([^ ]*\) (.*/\2/g'| grep "Qt5" | grep -v "build/ground" | sort | uniq | xargs -I '{}' cp -v -f '{}' $(ROOT_DIR)/build/ground/gcs/lib/taulabs
+	$(V1)find $(BUILD_DIR)/ground/gcs/bin/taulabsgcs.bin $(BUILD_DIR)/ground/gcs/lib/taulabs/plugins/TauLabs/*.so -exec ldd {} \; \
+	| sed -e '/^[^\t]/ d; s/^\t\(.* => \)\?\([^ ]*\) (.*/\2/g'| grep "Qt5" | grep -v "build/ground" | sort | uniq | xargs -I '{}' cp -v -f '{}' $(BUILD_DIR)/ground/gcs/lib/taulabs
 	@echo Copying qt.conf file
-	$(V1)cp -v $(ROOT_DIR)/package/linux/qt.conf $(ROOT_DIR)/build/ground/gcs/bin/
-	
-portable_package: clean_gcs
-	$(V1)tar -cvJf $(ROOT_DIR)/build/$(DEB_PACKAGE_NAME).tar.xz -C $(ROOT_DIR)/build/$(DEB_PACKAGE_NAME) .
-	$(V1)rm -rf $(ROOT_DIR)/build/$(DEB_PACKAGE_NAME)
+	$(V1)cp -v $(ROOT_DIR)/package/linux/qt.conf $(BUILD_DIR)/ground/gcs/bin/
 
-clean_gcs: | tlfw_resource gcs standalone
+ground_package: | tlfw_resource standalone
 	@echo $@ starting
-	$(V1)mkdir -p $(ROOT_DIR)/build/$(DEB_PACKAGE_NAME)/bin
-	$(V1)mkdir -p $(ROOT_DIR)/build/$(DEB_PACKAGE_NAME)/share
-	$(V1)mkdir -p $(ROOT_DIR)/build/$(DEB_PACKAGE_NAME)/lib
-	$(V1)cp -v -R $(ROOT_DIR)/build/ground/gcs/bin $(ROOT_DIR)/build/$(DEB_PACKAGE_NAME)
-	$(V1)cp -v -R $(ROOT_DIR)/build/ground/gcs/share $(ROOT_DIR)/build/$(DEB_PACKAGE_NAME)
-	$(V1)cp -v -R $(ROOT_DIR)/build/ground/gcs/lib $(ROOT_DIR)/build/$(DEB_PACKAGE_NAME)
-	$(V1)cp -v $(ROOT_DIR)/HISTORY.txt $(ROOT_DIR)/build/$(DEB_PACKAGE_NAME)
-	$(V1)cp -v $(ROOT_DIR)/KNOWN_ISSUES.txt $(ROOT_DIR)/build/$(DEB_PACKAGE_NAME)
-	$(V1)cp -v $(ROOT_DIR)/CREDITS.txt $(ROOT_DIR)/build/$(DEB_PACKAGE_NAME)
-	$(V1)cp -v $(ROOT_DIR)/LICENSE.txt $(ROOT_DIR)/build/$(DEB_PACKAGE_NAME)
-	$(V1)find $(ROOT_DIR)/build/$(DEB_PACKAGE_NAME) -type f -name "*Makefile" -exec rm -f {} \;
-	$(V1)find $(ROOT_DIR)/build/$(DEB_PACKAGE_NAME) -type f -name "*qmake.cache" -exec rm -f {} \;
-	$(V1)find $(ROOT_DIR)/build/$(DEB_PACKAGE_NAME) -type f -name "*udp_test" -exec rm -f {} \;
-	$(V1)find $(ROOT_DIR)/build/$(DEB_PACKAGE_NAME) -type f -name "*gcsversioninfo.h" -exec rm -f {} \;
-	$(V1)cp -v $(ROOT_DIR)/package/linux/taulabsgcs $(ROOT_DIR)/build/$(DEB_PACKAGE_NAME)
-	$(V1)cd $(ROOT_DIR)/build/$(DEB_PACKAGE_NAME) && find . -type f -print > $(ROOT_DIR)/build/$(DEB_PACKAGE_NAME)/filelist.lst
+	$(V1)mkdir -p $(PACKAGE_DIR)/$(DEB_PACKAGE_DIR)/bin
+	$(V1)mkdir -p $(PACKAGE_DIR)/$(DEB_PACKAGE_DIR)/share
+	$(V1)mkdir -p $(PACKAGE_DIR)/$(DEB_PACKAGE_DIR)/lib
+	$(V1)cp -v -R $(BUILD_DIR)/ground/gcs/bin $(PACKAGE_DIR)/$(DEB_PACKAGE_DIR)
+	$(V1)cp -v -R $(BUILD_DIR)/ground/gcs/share $(PACKAGE_DIR)/$(DEB_PACKAGE_DIR)
+	$(V1)cp -v -R $(BUILD_DIR)/ground/gcs/lib $(PACKAGE_DIR)/$(DEB_PACKAGE_DIR)
+	$(V1)cp -v $(ROOT_DIR)/HISTORY.txt $(PACKAGE_DIR)/$(DEB_PACKAGE_DIR)
+	$(V1)cp -v $(ROOT_DIR)/KNOWN_ISSUES.txt $(PACKAGE_DIR)/$(DEB_PACKAGE_DIR)
+	$(V1)cp -v $(ROOT_DIR)/CREDITS.txt $(PACKAGE_DIR)/$(DEB_PACKAGE_DIR)
+	$(V1)cp -v $(ROOT_DIR)/LICENSE.txt $(PACKAGE_DIR)/$(DEB_PACKAGE_DIR)
+	$(V1)find $(PACKAGE_DIR)/$(DEB_PACKAGE_DIR) -type f -name "*Makefile" -exec rm -f {} \;
+	$(V1)find $(PACKAGE_DIR)/$(DEB_PACKAGE_DIR) -type f -name "*qmake.cache" -exec rm -f {} \;
+	$(V1)find $(PACKAGE_DIR)/$(DEB_PACKAGE_DIR) -type f -name "*udp_test" -exec rm -f {} \;
+	$(V1)find $(PACKAGE_DIR)/$(DEB_PACKAGE_DIR) -type f -name "*gcsversioninfo.h" -exec rm -f {} \;
+	$(V1)cp -v $(ROOT_DIR)/package/linux/taulabsgcs $(PACKAGE_DIR)/$(DEB_PACKAGE_DIR)
+	$(V1)cd $(PACKAGE_DIR)/$(DEB_PACKAGE_DIR) && find . \( -type f -o -type l \) -print > $(PACKAGE_DIR)/$(DEB_PACKAGE_DIR)/filelist.lst
 
-linux_deb_package: deb_build clean_gcs
+linux_deb_package: deb_build ground_package
 	@echo $@ starting
-	cd .. && dpkg-buildpackage -b -us -uc
-	$(V1)mv $(ROOT_DIR)/../$(DEB_PACKAGE_NAME).deb $(BUILD_DIR)
-	$(V1)mv $(ROOT_DIR)/../$(DEB_PACKAGE_NAME).changes $(BUILD_DIR)
+	cd $(BUILD_DIR) && dpkg-buildpackage -b -us -uc
+	$(V1)mv $(ROOT_DIR)/$(DEB_PACKAGE_NAME).deb $(PACKAGE_DIR)
+	$(V1)mv $(ROOT_DIR)/$(DEB_PACKAGE_NAME).changes $(PACKAGE_DIR)
 	$(V1)rm -rf $(DEB_BUILD_DIR)
 
 deb_build: | $(DEB_BUILD_DIR) $(ALL_DEB_FILES)
 	@echo $@ starting
-	$(V1)sed -i -e "$(SED_SCRIPT)" $(DEB_BUILD_DIR)/*
+	$(V1)find $(DEB_BUILD_DIR) -maxdepth 1 -type f | xargs sed -i -e "$(SED_SCRIPT)"
 
 $(DEB_BUILD_DIR): 
 	@echo $@ starting
@@ -118,11 +111,15 @@ gcs: uavobjects_gcs | tlfw_resource
 	@echo "Linux Package Make of GCS."
 	$(V1) $(MAKE) -C $(ROOT_DIR) GCS_BUILD_CONF=release $@
 
-identify:
-	@echo ""
-	@echo "We are in the Linux Package Make system."
-	@echo ""
+.PHONY: gcs ground_package linux_deb_package deb_build $(DEB_BUILD_DIR)
 
-ground_package: | identify linux_deb_package
+package_ground_compress: package_ground
+	$(V1)tar -cvJf $(PACKAGE_DIR)/$(DEB_PACKAGE_DIR).tar.xz -C $(PACKAGE_DIR) $(DEB_PACKAGE_DIR)
+package_flight_compress: package_flight
+	$(V1)tar -cvJf $(PACKAGE_DIR)/firmware-$(PACKAGE_LBL).tar.xz -C $(FW_DIR) .
+package_matlab_compress: package_matlab
+	$(V1)tar -cvJf $(PACKAGE_DIR)/matlab-$(PACKAGE_LBL).tar.xz -C $(ML_DIR) .
+package_all_compress: package_all
+	$(V1)tar -cvJf $(BUILD_DIR)/$(PACKAGE_LBL).tar.xz --exclude='*.tar.xz' -C $(PACKAGE_DIR) .
 
-.PHONY: identify gcs ground_package linux_deb_package deb_build $(DEB_BUILD_DIR)
+.PHONY: package_ground_compress package_flight_compress package_matlab_compress
