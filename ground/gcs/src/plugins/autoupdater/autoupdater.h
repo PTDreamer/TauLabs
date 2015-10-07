@@ -50,19 +50,23 @@ private slots:
     void sstr(QString str);
     void processOutputAvailable();
     void downloadProgress(qint64 progress, qint64 total);
-    void decompressProgress();
+    void onNewOperation(QString newOp);
+    void onProgressText(QString newTxt);
+    void onProgress(int value);
 private:
+    bool usePrereleases;
     QTimer refreshTimer;
     gitHubReleaseAPI api;
-    bool usePrereleases;
     QPointer<updaterFormDialog> dialog;
     gitHubReleaseAPI::release mostRecentRelease;
     QWidget *parent;
     QProcess *process;
-    int totalProgressLines;
-    int currentProgressLines;
+    bool fileDecompress(QString fileName, QString destinationPath);
 signals:
     void updateFound(gitHubReleaseAPI::release release);
+    void decompressProgress(int progress);
+    void progressMessage(QString);
+    void currentOperationMessage(QString);
 };
 
 #endif // AUTOUPDATER_H
