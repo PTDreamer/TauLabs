@@ -142,6 +142,7 @@ public:
     errors getLastError() const;
     void setLastError(const errors &value);
 
+    QString getRepo();
 private:
     QString m_url;
     QString m_username;

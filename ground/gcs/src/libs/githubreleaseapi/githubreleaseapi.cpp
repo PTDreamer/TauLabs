@@ -56,6 +56,11 @@ void gitHubReleaseAPI::setRepo(QString url)
         m_url = m_url + "/";
 }
 
+QString gitHubReleaseAPI::getRepo()
+{
+    return m_url;
+}
+
 QHash<int, gitHubReleaseAPI::release> gitHubReleaseAPI::getReleases()
 {
     QHash<int, gitHubReleaseAPI::release> ret;
