@@ -29,6 +29,9 @@
 #include <QtGlobal>
 #include <QDir>
 #include <QMessageBox>
+#include <QApplication>
+#include <QtMath>
+#include <QSysInfo>
 
 AutoUpdater::AutoUpdater(QWidget *parent, UAVObjectManager * ObjMngr, int refreshInterval, bool usePrereleases, QString gitHubUrl) : usePrereleases(usePrereleases), api(this), dialog(NULL), parent(parent)
 {
@@ -57,6 +60,8 @@ void AutoUpdater::refreshSettings(int refreshInterval, bool usePrereleases, QStr
 
 void AutoUpdater::onRefreshTimerTimeout()
 {
+    qDebug() << "timeout";
+   // emit updateFound(mostRecentRelease);//REMOVE
     bool isUpdateFound = false;
     QDateTime currentGCS;
     if(!usePrereleases) {
@@ -70,10 +75,12 @@ void AutoUpdater::onRefreshTimerTimeout()
             return;
         mostRecentRelease = releaseList.values().first();
         foreach (gitHubReleaseAPI::release release, releaseList.values()) {
+            qDebug() << release.published_at << mostRecentRelease.published_at;
             if(release.published_at > mostRecentRelease.published_at)
                 mostRecentRelease = release;
         }
     }
+    qDebug() << mostRecentRelease.name << mostRecentRelease.published_at;
     if(mostRecentRelease.published_at > currentGCS)
         isUpdateFound = true;
     if(true || isUpdateFound)
@@ -95,7 +102,9 @@ void AutoUpdater::onUpdateFound(gitHubReleaseAPI::release release)
     connect(dialog.data(), SIGNAL(cancelDownload()), &api, SLOT(abortOperation()));
     connect(dialog.data(), SIGNAL(dialogAboutToClose(bool)), this, SLOT(onCancel(bool)));
     connect(&api, SIGNAL(downloadProgress(qint64,qint64)), this, SLOT(downloadProgress(qint64,qint64)));
-
+    connect(this, SIGNAL(progressMessage(QString)), this, SLOT(onProgressText(QString)));
+    connect(this, SIGNAL(decompressProgress(int)), this, SLOT(onProgress(int)));
+    connect(this, SIGNAL(currentOperationMessage(QString)), this, SLOT(onNewOperation(QString)));
 }
 
 void AutoUpdater::onDialogUpdate()
@@ -108,34 +117,76 @@ void AutoUpdater::onDialogUpdate()
 #elif defined (Q_OS_MAC)
     osString = "dmg";
 #endif
-    int id;
-    foreach (int assetID, mostRecentRelease.assets.keys()) {
-        if(mostRecentRelease.assets.value(assetID).name.contains(osString, Qt::CaseInsensitive)) {
-            id = assetID;
+    osString.append(QString::number(QSysInfo::WordSize));
+    gitHubReleaseAPI capi(parent);
+    connect(&capi, SIGNAL(downloadProgress(qint64,qint64)), this, SLOT(downloadProgress(qint64,qint64)));
+    connect(dialog.data(), SIGNAL(cancelDownload()), &capi, SLOT(abortOperation()));
+    capi.setRepo("PTDreamer", "copyApp");
+
+    int copyAppID = -1;
+    emit currentOperationMessage(tr("Looking for latest helper application"));
+    QHash<int, gitHubReleaseAPI::GitHubAsset> copyAppAssets = capi.getLatestRelease().assets;
+    if(copyAppAssets.values().length() == 0) {
+        QMessageBox::critical(parent, tr("ERROR"), tr("Could not retrieve helper application needed for the update process"));
+        dialog.data()->close();
+        return;
+    }
+    foreach (int assetID, copyAppAssets.keys()) {
+        if(copyAppAssets.value(assetID).label.contains(osString, Qt::CaseInsensitive)) {
+            copyAppID = assetID;
             break;
         }
     }
-    QByteArray fileData = api.downloadAsset(id);
+    if(copyAppID == -1) {
+        QMessageBox::critical(parent, tr("ERROR"), tr("Could not retrieve helper application needed for the update process"));
+        dialog.data()->close();
+        return;
+    }
+    int appID = -1;
+    emit currentOperationMessage(tr("Looking for latest application file package"));
+    foreach (int assetID, mostRecentRelease.assets.keys()) {
+        qDebug() << mostRecentRelease.assets.value(assetID).name;
+        if(mostRecentRelease.assets.value(assetID).label.contains(osString, Qt::CaseInsensitive)) {
+            appID = assetID;
+            break;
+        }
+    }
+    if(appID == -1) {
+        QMessageBox::critical(parent, tr("ERROR"), tr("Could not retrieve application package needed for the update process"));
+        dialog.data()->close();
+        return;
+    }
+    QFile copyAppFile;
+    copyAppFile.setFileName(QDir::tempPath() + QDir::separator() + copyAppAssets.value(copyAppID).name);
+    copyAppFile.open(QIODevice::WriteOnly);
+    emit currentOperationMessage(tr("Downloading latest helper application"));
+    copyAppFile.write(capi.downloadAsset(copyAppID));
+    copyAppFile.close();
+
+    emit currentOperationMessage(tr("Downloading latest application file package"));
+    QByteArray fileData = api.downloadAsset(appID);
     QFile file;
-    file.setFileName(QDir::tempPath() + QDir::separator() + mostRecentRelease.assets.value(id).name);
+    file.setFileName(QDir::tempPath() + QDir::separator() + mostRecentRelease.assets.value(appID).name);
     if(!file.open(QIODevice::WriteOnly)) {
-        QMessageBox::critical(parent, tr("ERROR"), tr("Could not open file for writing"));
+        QMessageBox::critical(parent, tr("ERROR"), QString(tr("Could not open file for writing %0")).arg(file.fileName()));
         return;
     }
     file.write(fileData);
-    QEventLoop loop;
-    connect(process, SIGNAL(finished(int)), &loop, SLOT(quit()));
-    process->start("tar", QStringList() << "-tf" << file.fileName());
-    loop.exec();
-    totalProgressLines = 0;
-    currentProgressLines = 0;
-    if(process->exitCode() == 0) {
-        QString str(process->readAll());
-        QStringList lineList = str.split("\n");
-        totalProgressLines = lineList.count();
+    emit currentOperationMessage(tr("Decompressing new application compressed file"));
+    if(!fileDecompress(file.fileName(), QDir::tempPath())) {
+        QMessageBox::critical(parent, tr("ERROR"), tr("Something went wrong during file decompression!"));
+        return;
     }
-    connect(process, SIGNAL(readyRead()), this, SLOT(decompressProgress()));
-    process->start("tar", QStringList() << "-xvf" << file.fileName() << "-C" << QDir::tempPath());
+    emit currentOperationMessage(tr("Decompressing helper application"));
+    if(!fileDecompress(copyAppFile.fileName(), QDir::tempPath())) {
+        QMessageBox::critical(parent, tr("ERROR"), tr("Something went wrong during file decompression!"));
+        return;
+    }
+    QDir appDir = QApplication::applicationDirPath();
+    appDir.cdUp();
+    QMessageBox::information(parent, tr("Update Ready"), tr("The file fetching process is completed, press ok to continue the update"));
+    process->startDetached(QDir::tempPath() + QDir::separator() + "package" + QDir::separator() + "copyApp", QStringList() << QDir::tempPath() + QDir::separator() + QFileInfo(file).baseName() <<  appDir.absolutePath() << QApplication::applicationFilePath());
+    QApplication::quit();
 }
 
 void AutoUpdater::onCancel(bool dontShowAgain)
@@ -161,24 +212,84 @@ void AutoUpdater::downloadProgress(qint64 progress, qint64 total)
     if(total <= 0)
         return;
     if(!dialog.isNull()) {
-        dialog.data()->setOperation(tr("Downloading"));
         dialog.data()->setProgress(QString(tr("%0 of %1 bytes downloaded")).arg(progress).arg(total));
         int p = (progress * 100) / total;
         dialog.data()->setProgress(p);
     }
 }
 
-void AutoUpdater::decompressProgress()
+void AutoUpdater::onNewOperation(QString newOp)
 {
-    QString str(process->readAll());
-    QStringList lineList = str.split("\n");
-    currentProgressLines += lineList.count();
-    int p = (currentProgressLines * 100) / totalProgressLines;
-    if(!dialog.isNull()) {
-        dialog.data()->setOperation(tr("Decompressing"));
-        dialog.data()->setProgress(p);
-        QString str = lineList.first();
-        str = str.split(QDir::separator()).last();
-        dialog.data()->setProgress(QString(tr("Decompressing %0")).arg(str));
+    dialog.data()->setOperation(newOp);
+}
+
+void AutoUpdater::onProgressText(QString newTxt)
+{
+    dialog.data()->setProgress(newTxt);
+}
+
+void AutoUpdater::onProgress(int value)
+{
+    dialog.data()->setProgress(value);
+}
+
+bool AutoUpdater::fileDecompress(QString fileName, QString destinationPath)
+{
+    qDebug() << "1-" << fileName << destinationPath;
+    QFile file(fileName);
+    if(!file.exists())
+        return false;
+    QString cmd = QString("/bin/sh -c \"xz -l %0 | grep -oh -m2 \"[0-9]*\\.[0-9].MiB\" | tail -1\"").arg(fileName);
+    QEventLoop loop;
+    QProcess process;
+    connect(&process, SIGNAL(finished(int)), &loop, SLOT(quit()));
+    process.start(cmd);
+    loop.exec();
+    if(process.exitStatus() != QProcess::NormalExit)
+        return false;
+    QString totalSizeStr = process.readAll();
+    QString unit = totalSizeStr.split(" ").value(1);
+    QString value = totalSizeStr.split(" ").value(0);
+    qint64 multiplier;
+    if(unit.contains("KiB"))
+        multiplier = qPow(2,10);
+    else if(unit.contains("MiB"))
+        multiplier = qPow(2,20);
+    else if(unit.contains("GiB"))
+        multiplier = qPow(2,30);
+    else
+        multiplier = 1;
+    bool ok;
+    qint64 size = value.replace(",", ".").toDouble(&ok) * multiplier;
+    qint64 partial = 0;
+    if(!ok)
+        size = 0;
+    cmd = QString("tar -xvvf %0 -C %1").arg(fileName).arg(destinationPath);
+    process.start("/bin/sh", QStringList() << "-c" << cmd);
+    connect(&process, SIGNAL(readyRead()), &loop, SLOT(quit()));
+    QString receiveBuffer;
+    qDebug() << "out WHILE";
+    while(process.state() != QProcess::NotRunning) {
+        qDebug() << "in WHILE";
+        loop.exec();
+        do {
+            receiveBuffer = QString(process.readLine());
+            if(!receiveBuffer.isEmpty()) {
+                emit progressMessage(QString("Extracting %0").arg(QString(receiveBuffer.split(QRegExp("\\s+")).value(5)).split(QDir::separator()).last()));
+                qDebug() << QString("Extracting %0").arg(receiveBuffer.split(QRegExp("\\s+")).value(5));
+                if(size != 0) {
+                    QString s = receiveBuffer.split(QRegExp("\\s+")).value(2);
+                    if(true) {
+                        partial += s.toInt();
+                        emit decompressProgress(partial * 100 / size);
+                    }
+                }
+            }
+        } while (process.canReadLine());
+
     }
+    if(process.exitStatus() != QProcess::NormalExit)
+        return false;
+    emit decompressProgress(100);
+    return true;
 }
