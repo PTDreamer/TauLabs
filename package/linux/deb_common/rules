@@ -40,7 +40,7 @@ install:
 	cp -arp <PROJECT_ROOT>/package/linux/taulabs_menu.png <TARGET_ROOT>/taulabs/usr/share/pixmaps
 	cp -arp <PROJECT_ROOT>/package/linux/taulabs_menu.menu <TARGET_ROOT>/taulabs/etc/xdg/menus/applications-merged
 	cp -arp <PROJECT_ROOT>/package/linux/taulabs_menu.directory debian/taulabs/usr/share/desktop-directories
-	ln -s <TARGET_ROOT>/usr/local/TauLabs/bin/taulabsgcs <TARGET_ROOT>/taulabs/usr/bin/taulabsgcs
+	ln -s /usr/local/TauLabs/bin/taulabsgcs <TARGET_ROOT>/taulabs/usr/bin/taulabsgcs
 	rm -rf <TARGET_ROOT>/taulabs/usr/local/TauLabs/share/taulabs/sounds/sounds
 	rm -rf <TARGET_ROOT>/taulabs/usr/local/TauLabs/share/taulabs/pfd/pfd
 	rm -rf <TARGET_ROOT>/taulabs/usr/local/TauLabs/share/taulabs/models/models

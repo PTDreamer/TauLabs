@@ -7,6 +7,5 @@
     <dependencyList>
         <dependency name="Core" version="1.0.0"/>
         <dependency name="UAVObjects" version="1.0.0"/>
-        <dependency name="UAVTalk" version="1.0.0"/>
     </dependencyList>
 </plugin> 

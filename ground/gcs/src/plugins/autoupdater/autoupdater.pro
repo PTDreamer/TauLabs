@@ -1,6 +1,6 @@
 QT += network
 QT += xml
-
+QT += concurrent
 TEMPLATE = lib
 TARGET = AutoUpdater
 include(../../taulabsgcsplugin.pri)

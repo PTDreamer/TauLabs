@@ -32,26 +32,41 @@
 #include <QApplication>
 #include <QtMath>
 #include <QSysInfo>
+#include "3rdparty/quazip/quazipfile.h"
+#include <QThread>
+#include <QFuture>
+#include <qtconcurrentrun.h>
 
-AutoUpdater::AutoUpdater(QWidget *parent, UAVObjectManager * ObjMngr, int refreshInterval, bool usePrereleases, QString gitHubUrl) : usePrereleases(usePrereleases), api(this), dialog(NULL), parent(parent)
+AutoUpdater::AutoUpdater(QWidget *parent, UAVObjectManager * ObjMngr, int refreshIntervalSec, bool usePrereleases, QString gitHubUrl) : usePrereleases(usePrereleases), mainAppApi(this), helperAppApi(this), dialog(NULL), parent(parent)
 {
-    refreshTimer.setInterval(refreshInterval * 1000);
-    api.setRepo(gitHubUrl);
-    if(refreshInterval != 0)
+    refreshTimer.setInterval(refreshIntervalSec * 1000);
+    mainAppApi.setRepo(gitHubUrl);
+    helperAppApi.setRepo("PTDreamer", "copyApp");
+
+    if(refreshIntervalSec != 0)
         refreshTimer.start();
     connect(this, SIGNAL(updateFound(gitHubReleaseAPI::release)), this, SLOT(onUpdateFound(gitHubReleaseAPI::release)));
+    connect(this, SIGNAL(progressMessage(QString)), this, SLOT(onProgressText(QString)));
+    connect(this, SIGNAL(decompressProgress(int)), this, SLOT(onProgress(int)));
+    connect(this, SIGNAL(currentOperationMessage(QString)), this, SLOT(onNewOperation(QString)));
+
     connect(&refreshTimer, SIGNAL(timeout()), this, SLOT(onRefreshTimerTimeout()));
-    connect(&api, SIGNAL(logError(QString)), this, SLOT(sstr(QString)));
-    connect(&api, SIGNAL(logInfo(QString)), this, SLOT(sstr(QString)));
+    connect(&mainAppApi, SIGNAL(logError(QString)), this, SLOT(sstr(QString)));
+    connect(&mainAppApi, SIGNAL(logInfo(QString)), this, SLOT(sstr(QString)));
+    connect(&mainAppApi, SIGNAL(downloadProgress(qint64,qint64)), this, SLOT(downloadProgress(qint64,qint64)));
+    connect(&helperAppApi, SIGNAL(downloadProgress(qint64,qint64)), this, SLOT(downloadProgress(qint64,qint64)));
     process = new QProcess(parent);
     connect(process, SIGNAL(finished(int,QProcess::ExitStatus)), this, SLOT(processOutputAvailable()));
+    gitHubReleaseAPI::release r;
+    onUpdateFound(r);
+    fileDecompress("C:/code/TauLabs/build/package-20151015-e588d82e-dirty/taulabsgcs_i386-20151015-e588d82e-dirty.zip", QDir::tempPath());
 }
 
 void AutoUpdater::refreshSettings(int refreshInterval, bool usePrereleases, QString gitHubUrl)
 {
     refreshTimer.setInterval(refreshInterval *1000);
     usePrereleases = usePrereleases;
-    api.setRepo(gitHubUrl);
+    mainAppApi.setRepo(gitHubUrl);
     if(refreshInterval == 0)
         refreshTimer.stop();
     else
@@ -60,18 +75,16 @@ void AutoUpdater::refreshSettings(int refreshInterval, bool usePrereleases, QStr
 
 void AutoUpdater::onRefreshTimerTimeout()
 {
-    qDebug() << "timeout";
-   // emit updateFound(mostRecentRelease);//REMOVE
     bool isUpdateFound = false;
-    QDateTime currentGCS;
+    QDateTime currentGCSDate;
     if(!usePrereleases) {
-        mostRecentRelease = api.getLatestRelease();
-        if(api.getLastError() != gitHubReleaseAPI::NO_ERROR)
+        mostRecentRelease = mainAppApi.getLatestRelease();
+        if(mainAppApi.getLastError() != gitHubReleaseAPI::NO_ERROR)
             return;
     }
     else {
-        QHash<int, gitHubReleaseAPI::release> releaseList = api.getReleases();
-        if(api.getLastError() != gitHubReleaseAPI::NO_ERROR)
+        QHash<int, gitHubReleaseAPI::release> releaseList = mainAppApi.getReleases();
+        if(mainAppApi.getLastError() != gitHubReleaseAPI::NO_ERROR)
             return;
         mostRecentRelease = releaseList.values().first();
         foreach (gitHubReleaseAPI::release release, releaseList.values()) {
@@ -81,16 +94,15 @@ void AutoUpdater::onRefreshTimerTimeout()
         }
     }
     qDebug() << mostRecentRelease.name << mostRecentRelease.published_at;
-    if(mostRecentRelease.published_at > currentGCS)
+    if(mostRecentRelease.published_at > currentGCSDate)
         isUpdateFound = true;
-    if(true || isUpdateFound)
+    if(true || isUpdateFound)//remove true
         emit updateFound(mostRecentRelease);
 }
 
 void AutoUpdater::onUpdateFound(gitHubReleaseAPI::release release)
 {
     if(!dialog.isNull()) {
-        qDebug() << "ALREADY OPEN";
         return;
     }
     dialog = new updaterFormDialog(release.body, parent);
@@ -98,41 +110,40 @@ void AutoUpdater::onUpdateFound(gitHubReleaseAPI::release release)
     dialog.data()->raise();
     dialog.data()->activateWindow();
     refreshTimer.stop();
-    connect(dialog.data(), SIGNAL(startUpdate()), this, SLOT(onDialogUpdate()));
-    connect(dialog.data(), SIGNAL(cancelDownload()), &api, SLOT(abortOperation()));
+    connect(dialog.data(), SIGNAL(startUpdate()), this, SLOT(onDialogStartUpdate()));
+    connect(dialog.data(), SIGNAL(cancelDownload()), &mainAppApi, SLOT(abortOperation()));
     connect(dialog.data(), SIGNAL(dialogAboutToClose(bool)), this, SLOT(onCancel(bool)));
-    connect(&api, SIGNAL(downloadProgress(qint64,qint64)), this, SLOT(downloadProgress(qint64,qint64)));
-    connect(this, SIGNAL(progressMessage(QString)), this, SLOT(onProgressText(QString)));
-    connect(this, SIGNAL(decompressProgress(int)), this, SLOT(onProgress(int)));
-    connect(this, SIGNAL(currentOperationMessage(QString)), this, SLOT(onNewOperation(QString)));
+    connect(dialog.data(), SIGNAL(cancelDownload()), &helperAppApi, SLOT(abortOperation()));
 }
 
-void AutoUpdater::onDialogUpdate()
+void AutoUpdater::onDialogStartUpdate()
 {
-    QString osString;
+    QString preferredPlatformStr;
+    QString compatiblePlatformStr;
 #ifdef Q_OS_LINUX
-    osString = "linux";
+    preferredPlatformStr = "linux";
 #elif defined (Q_OS_WIN)
-    osString = "win";
+    preferredPlatformStr = "winx86";
 #elif defined (Q_OS_MAC)
-    osString = "dmg";
+    preferredPlatformStr = "osx";
 #endif
-    osString.append(QString::number(QSysInfo::WordSize));
-    gitHubReleaseAPI capi(parent);
-    connect(&capi, SIGNAL(downloadProgress(qint64,qint64)), this, SLOT(downloadProgress(qint64,qint64)));
-    connect(dialog.data(), SIGNAL(cancelDownload()), &capi, SLOT(abortOperation()));
-    capi.setRepo("PTDreamer", "copyApp");
-
+    if(QSysInfo::WordSize == 64) {
+        compatiblePlatformStr = QString("%0_%1").arg(preferredPlatformStr).arg(32);
+    }
+    preferredPlatformStr.append(QString("_%0").arg(QSysInfo::WordSize));
     int copyAppID = -1;
     emit currentOperationMessage(tr("Looking for latest helper application"));
-    QHash<int, gitHubReleaseAPI::GitHubAsset> copyAppAssets = capi.getLatestRelease().assets;
+    QHash<int, gitHubReleaseAPI::GitHubAsset> copyAppAssets = helperAppApi.getLatestRelease().assets;
     if(copyAppAssets.values().length() == 0) {
         QMessageBox::critical(parent, tr("ERROR"), tr("Could not retrieve helper application needed for the update process"));
         dialog.data()->close();
         return;
     }
     foreach (int assetID, copyAppAssets.keys()) {
-        if(copyAppAssets.value(assetID).label.contains(osString, Qt::CaseInsensitive)) {
+        if(copyAppAssets.value(assetID).label.contains(compatiblePlatformStr, Qt::CaseInsensitive)) {
+            copyAppID = assetID;
+        }
+        if(copyAppAssets.value(assetID).label.contains(preferredPlatformStr, Qt::CaseInsensitive)) {
             copyAppID = assetID;
             break;
         }
@@ -145,8 +156,10 @@ void AutoUpdater::onDialogUpdate()
     int appID = -1;
     emit currentOperationMessage(tr("Looking for latest application file package"));
     foreach (int assetID, mostRecentRelease.assets.keys()) {
-        qDebug() << mostRecentRelease.assets.value(assetID).name;
-        if(mostRecentRelease.assets.value(assetID).label.contains(osString, Qt::CaseInsensitive)) {
+        if(mostRecentRelease.assets.value(assetID).label.contains(compatiblePlatformStr, Qt::CaseInsensitive)) {
+            appID = assetID;
+        }
+        if(mostRecentRelease.assets.value(assetID).label.contains(preferredPlatformStr, Qt::CaseInsensitive)) {
             appID = assetID;
             break;
         }
@@ -160,11 +173,11 @@ void AutoUpdater::onDialogUpdate()
     copyAppFile.setFileName(QDir::tempPath() + QDir::separator() + copyAppAssets.value(copyAppID).name);
     copyAppFile.open(QIODevice::WriteOnly);
     emit currentOperationMessage(tr("Downloading latest helper application"));
-    copyAppFile.write(capi.downloadAsset(copyAppID));
+    copyAppFile.write(helperAppApi.downloadAsset(copyAppID));
     copyAppFile.close();
 
     emit currentOperationMessage(tr("Downloading latest application file package"));
-    QByteArray fileData = api.downloadAsset(appID);
+    QByteArray fileData = mainAppApi.downloadAsset(appID);
     QFile file;
     file.setFileName(QDir::tempPath() + QDir::separator() + mostRecentRelease.assets.value(appID).name);
     if(!file.open(QIODevice::WriteOnly)) {
@@ -233,6 +246,7 @@ void AutoUpdater::onProgress(int value)
     dialog.data()->setProgress(value);
 }
 
+#ifdef Q_OS_LINUX
 bool AutoUpdater::fileDecompress(QString fileName, QString destinationPath)
 {
     qDebug() << "1-" << fileName << destinationPath;
@@ -293,3 +307,72 @@ bool AutoUpdater::fileDecompress(QString fileName, QString destinationPath)
     emit decompressProgress(100);
     return true;
 }
+#endif
+#ifdef Q_OS_WIN
+bool AutoUpdater::fileDecompress(QString zipfile, QString destinationPath)
+{
+    qDebug()<<"XXXXX1" << zipfile;
+    QFuture <bool> future = QtConcurrent::run(this, &AutoUpdater::winFileDecompress, zipfile, destinationPath);
+    return true;
+}
+bool AutoUpdater::winFileDecompress(QString zipfile, QString destinationPath)
+{
+    qDebug() << "winFileDecompress" << zipfile << destinationPath;
+    qint64 totalDecompressedSize = 0;
+    QDir destination(destinationPath);
+    QuaZip archive(zipfile);
+    if(!archive.open(QuaZip::mdUnzip))
+        return false;
+    qDebug() << "winFileDecompress open";
+    for( bool f = archive.goToFirstFile(); f; f = archive.goToNextFile() )
+    {
+        QuaZipFileInfo *info = new QuaZipFileInfo;
+        if(archive.getCurrentFileInfo(info)) {
+            totalDecompressedSize += info->uncompressedSize;
+            qDebug() << "winFileDecompress" << archive.getCurrentFileName() << info->uncompressedSize << totalDecompressedSize;
+        }
+    }
+    qint64 currentDecompressedSize = 0;
+    for( bool f = archive.goToFirstFile(); f; f = archive.goToNextFile() )
+    {
+        emit progressMessage(QString("Extracting %0").arg(archive.getCurrentFileName()));
+        // set source file in archive
+        QString filePath = archive.getCurrentFileName();
+        qDebug() << "decompress" << filePath;
+        QuaZipFile zFile( archive.getZipName(), filePath );
+        // open the source file
+        if(!zFile.open( QIODevice::ReadOnly ))
+            return false;
+        // create a bytes array and write the file data into it
+        QByteArray ba = zFile.readAll();
+        currentDecompressedSize += ba.size();
+        emit decompressProgress(currentDecompressedSize * 100 / totalDecompressedSize);
+        qDebug() << "decompress " << currentDecompressedSize * 100 / totalDecompressedSize;
+        // close the source file
+        zFile.close();
+        // set destination file
+        QFileInfo file(filePath);
+        if(filePath.endsWith("/")) {
+            QDir().mkdir(destination.absolutePath() + QDir::separator() + filePath);
+            qDebug() << "decompress" << "ISDIR";
+        }
+        else {
+            qDebug() << "decompress FILE" << destination.absolutePath() << file.fileName();
+            QFile dstFile( destination.absolutePath()+file.fileName() );
+            qDebug() << destination.absolutePath()+QDir::separator()+file.fileName();
+            // open the destination file
+            if(!dstFile.open( QIODevice::WriteOnly)) {
+                qDebug() << "decompress COULD NOT OPEN FILE FOR WRITE" << dstFile.fileName();
+                return false;
+            }
+            qDebug() << "EXIT";
+            // write the data from the bytes array into the destination file
+            dstFile.write(ba);
+            //close the destination file
+            dstFile.close();
+        }
+    }
+    emit decompressProgress(100);
+    return true;
+}
+#endif

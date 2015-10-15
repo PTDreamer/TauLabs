@@ -137,16 +137,18 @@ package_matlab: | matlab
 
 package_ground: | ground_package
 
-package: | linux_deb_package
+package_installer: | installer_package
 
 package_all: package_flight package_ground package_matlab
 
 .PHONY: help uavobjects_flight uavobjects_gcs uavobjects_matlab all_clean 
-.PHONY: package_ground package_flight package_matlab package_all
+.PHONY: package_ground package_flight package_matlab package_all package_installer
 
 # tlfw_resource must be generated before the ground package,
 # and it depends on flight firmware images
-ground_package: | tlfw_resource
+ground_package: ground_package_os_specific
+	@echo $@ starting
+	$(V1)cd $(PACKAGE_DIR)/$(GCS_PACKAGE_NAME) && find . \( -type f -o -type l \) -print > $(PACKAGE_DIR)/$(GCS_PACKAGE_NAME)/filelist.lst
 
 tlfw_resource: | all_fw all_bu
 
@@ -196,5 +198,25 @@ tlfw_resource:
 	$(V1) $(foreach bu_targ, $(BU_TARGETS), mkdir -p $(BUILD_DIR)/ground/$@/build/$(bu_targ);)
 	$(V1)$(foreach fw_targ, $(FW_TARGETS), cp $(BUILD_DIR)/$(fw_targ)/$(fw_targ).tlfw $(BUILD_DIR)/ground/$@/build/$(fw_targ)/;)
 	$(V1)$(foreach bu_targ, $(BU_TARGETS), cp $(BUILD_DIR)/$(bu_targ)/$(bu_targ).tlfw $(BUILD_DIR)/ground/$@/build/$(bu_targ)/;)
+
+
+GCS_PACKAGE_NAME:= taulabsgcs_$(PLATFORM)_$(PLATFORM_NAME)-$(PACKAGE_LBL)
+
+ground_package_common: | tlfw_resource standalone
+	@echo $@ starting
+	$(V1) mkdir -p $(PACKAGE_DIR)/$(GCS_PACKAGE_NAME)/bin
+	$(V1) mkdir -p $(PACKAGE_DIR)/$(GCS_PACKAGE_NAME)/share
+	$(V1) mkdir -p $(PACKAGE_DIR)/$(GCS_PACKAGE_NAME)/lib
+	$(V1)cp -v -R $(BUILD_DIR)/ground/gcs/bin $(PACKAGE_DIR)/$(GCS_PACKAGE_NAME)
+	$(V1)cp -v -R $(BUILD_DIR)/ground/gcs/share $(PACKAGE_DIR)/$(GCS_PACKAGE_NAME)
+	$(V1)cp -v -R $(BUILD_DIR)/ground/gcs/lib $(PACKAGE_DIR)/$(GCS_PACKAGE_NAME)
+	$(V1)cp -v $(ROOT_DIR)/HISTORY.txt $(PACKAGE_DIR)/$(GCS_PACKAGE_NAME)
+	$(V1)cp -v $(ROOT_DIR)/KNOWN_ISSUES.txt $(PACKAGE_DIR)/$(GCS_PACKAGE_NAME)
+	$(V1)cp -v $(ROOT_DIR)/CREDITS.txt $(PACKAGE_DIR)/$(GCS_PACKAGE_NAME)
+	$(V1)cp -v $(ROOT_DIR)/LICENSE.txt $(PACKAGE_DIR)/$(GCS_PACKAGE_NAME)
+	$(V1)find $(PACKAGE_DIR)/$(GCS_PACKAGE_NAME) -type f -name "*Makefile" -exec rm -f {} \;
+	$(V1)find $(PACKAGE_DIR)/$(GCS_PACKAGE_NAME) -type f -name "*qmake.cache" -exec rm -f {} \;
+	$(V1)find $(PACKAGE_DIR)/$(GCS_PACKAGE_NAME) -type f -name "*udp_test" -exec rm -f {} \;
+	$(V1)find $(PACKAGE_DIR)/$(GCS_PACKAGE_NAME) -type f -name "*gcsversioninfo.h" -exec rm -f {} \;
 
 include $(WHEREAMI)/Makefile.$(PLATFORM)

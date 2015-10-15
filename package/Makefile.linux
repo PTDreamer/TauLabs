@@ -20,7 +20,7 @@ SED_AUTHOR_NAME		= $(shell git config user.name)
 SED_AUTHOR_EMAIL	= $(shell git config user.email)
 SED_AUTHOR		= $(SED_AUTHOR_NAME) <$(SED_AUTHOR_EMAIL)>
 SED_DATE_STRG		= $(shell date -R)
-SED_BIN_ROOT		= $(PACKAGE_DIR)/$(DEB_PACKAGE_DIR)
+SED_BIN_ROOT		= $(PACKAGE_DIR)/$(GCS_PACKAGE_NAME)
 SED_SCRIPT		= s|<VERSION>|$(VERSION_FULL)|;s|<DATE>|$(SED_DATE_STRG)|;s|<AUTHOR>|$(SED_AUTHOR)|;s|<BIN_ROOT>|$(SED_BIN_ROOT)|;s|<PROJECT_ROOT>|$(ROOT_DIR)|;s|<TARGET_ROOT>|$(DEB_BUILD_DIR)|g
 
 DEB_CFG_CMN		:= $(ROOT_DIR)/package/linux/deb_common
@@ -39,7 +39,6 @@ endif
 ALL_DEB_FILES  = $(foreach f, $(DEB_CFG_CMN_FILES), $(DEB_BUILD_DIR)/$(f))
 ALL_DEB_FILES += $(foreach f, $(DEB_MACHINE_FILES), $(DEB_BUILD_DIR)/$(f))
 
-DEB_PACKAGE_DIR	:= taulabsgcs_$(PLATFORM_NAME)-$(VERSION_FULL)
 DEB_PACKAGE_NAME:= taulabs_$(VERSION_FULL)_$(PLATFORM_NAME)
 
 QT_PLUGINS_USED		:= imageformats platforms sqldrivers xcbglintegrations
@@ -69,24 +68,24 @@ standalone: | gcs
 
 ground_package: | tlfw_resource standalone
 	@echo $@ starting
-	$(V1)mkdir -p $(PACKAGE_DIR)/$(DEB_PACKAGE_DIR)/bin
-	$(V1)mkdir -p $(PACKAGE_DIR)/$(DEB_PACKAGE_DIR)/share
-	$(V1)mkdir -p $(PACKAGE_DIR)/$(DEB_PACKAGE_DIR)/lib
-	$(V1)cp -v -R $(BUILD_DIR)/ground/gcs/bin $(PACKAGE_DIR)/$(DEB_PACKAGE_DIR)
-	$(V1)cp -v -R $(BUILD_DIR)/ground/gcs/share $(PACKAGE_DIR)/$(DEB_PACKAGE_DIR)
-	$(V1)cp -v -R $(BUILD_DIR)/ground/gcs/lib $(PACKAGE_DIR)/$(DEB_PACKAGE_DIR)
-	$(V1)cp -v $(ROOT_DIR)/HISTORY.txt $(PACKAGE_DIR)/$(DEB_PACKAGE_DIR)
-	$(V1)cp -v $(ROOT_DIR)/KNOWN_ISSUES.txt $(PACKAGE_DIR)/$(DEB_PACKAGE_DIR)
-	$(V1)cp -v $(ROOT_DIR)/CREDITS.txt $(PACKAGE_DIR)/$(DEB_PACKAGE_DIR)
-	$(V1)cp -v $(ROOT_DIR)/LICENSE.txt $(PACKAGE_DIR)/$(DEB_PACKAGE_DIR)
-	$(V1)find $(PACKAGE_DIR)/$(DEB_PACKAGE_DIR) -type f -name "*Makefile" -exec rm -f {} \;
-	$(V1)find $(PACKAGE_DIR)/$(DEB_PACKAGE_DIR) -type f -name "*qmake.cache" -exec rm -f {} \;
-	$(V1)find $(PACKAGE_DIR)/$(DEB_PACKAGE_DIR) -type f -name "*udp_test" -exec rm -f {} \;
-	$(V1)find $(PACKAGE_DIR)/$(DEB_PACKAGE_DIR) -type f -name "*gcsversioninfo.h" -exec rm -f {} \;
-	$(V1)cp -v $(ROOT_DIR)/package/linux/taulabsgcs $(PACKAGE_DIR)/$(DEB_PACKAGE_DIR)
-	$(V1)cd $(PACKAGE_DIR)/$(DEB_PACKAGE_DIR) && find . \( -type f -o -type l \) -print > $(PACKAGE_DIR)/$(DEB_PACKAGE_DIR)/filelist.lst
+	$(V1)mkdir -p $(PACKAGE_DIR)/$(GCS_PACKAGE_NAME)/bin
+	$(V1)mkdir -p $(PACKAGE_DIR)/$(GCS_PACKAGE_NAME)/share
+	$(V1)mkdir -p $(PACKAGE_DIR)/$(GCS_PACKAGE_NAME)/lib
+	$(V1)cp -v -R $(BUILD_DIR)/ground/gcs/bin $(PACKAGE_DIR)/$(GCS_PACKAGE_NAME)
+	$(V1)cp -v -R $(BUILD_DIR)/ground/gcs/share $(PACKAGE_DIR)/$(GCS_PACKAGE_NAME)
+	$(V1)cp -v -R $(BUILD_DIR)/ground/gcs/lib $(PACKAGE_DIR)/$(GCS_PACKAGE_NAME)
+	$(V1)cp -v $(ROOT_DIR)/HISTORY.txt $(PACKAGE_DIR)/$(GCS_PACKAGE_NAME)
+	$(V1)cp -v $(ROOT_DIR)/KNOWN_ISSUES.txt $(PACKAGE_DIR)/$(GCS_PACKAGE_NAME)
+	$(V1)cp -v $(ROOT_DIR)/CREDITS.txt $(PACKAGE_DIR)/$(GCS_PACKAGE_NAME)
+	$(V1)cp -v $(ROOT_DIR)/LICENSE.txt $(PACKAGE_DIR)/$(GCS_PACKAGE_NAME)
+	$(V1)find $(PACKAGE_DIR)/$(GCS_PACKAGE_NAME) -type f -name "*Makefile" -exec rm -f {} \;
+	$(V1)find $(PACKAGE_DIR)/$(GCS_PACKAGE_NAME) -type f -name "*qmake.cache" -exec rm -f {} \;
+	$(V1)find $(PACKAGE_DIR)/$(GCS_PACKAGE_NAME) -type f -name "*udp_test" -exec rm -f {} \;
+	$(V1)find $(PACKAGE_DIR)/$(GCS_PACKAGE_NAME) -type f -name "*gcsversioninfo.h" -exec rm -f {} \;
+	$(V1)cp -v $(ROOT_DIR)/package/linux/taulabsgcs $(PACKAGE_DIR)/$(GCS_PACKAGE_NAME)
+	$(V1)cd $(PACKAGE_DIR)/$(GCS_PACKAGE_NAME) && find . \( -type f -o -type l \) -print > $(PACKAGE_DIR)/$(GCS_PACKAGE_NAME)/filelist.lst
 
-linux_deb_package: deb_build ground_package
+installer_package: deb_build ground_package
 	@echo $@ starting
 	cd $(BUILD_DIR) && dpkg-buildpackage -b -us -uc
 	$(V1)mv $(ROOT_DIR)/$(DEB_PACKAGE_NAME).deb $(PACKAGE_DIR)
@@ -100,9 +99,7 @@ deb_build: | $(DEB_BUILD_DIR) $(ALL_DEB_FILES)
 $(DEB_BUILD_DIR): 
 	@echo $@ starting
 	$(V1)mkdir -p $(DEB_BUILD_DIR)
-
 $(foreach cpfile, $(DEB_CFG_CMN_FILES), $(eval $(call CP_DEB_FILES_TEMPLATE,$(cpfile),$(DEB_BUILD_DIR),$(DEB_CFG_CMN))))
-
 $(foreach cpfile, $(DEB_MACHINE_FILES), $(eval $(call CP_DEB_FILES_TEMPLATE,$(cpfile),$(DEB_BUILD_DIR),$(DEB_MACHINE_DIR))))
 
 gcs: uavobjects_gcs | tlfw_resource
@@ -112,7 +109,7 @@ gcs: uavobjects_gcs | tlfw_resource
 .PHONY: gcs ground_package linux_deb_package deb_build $(DEB_BUILD_DIR)
 
 package_ground_compress: package_ground
-	$(V1)tar -cvJf $(PACKAGE_DIR)/$(DEB_PACKAGE_DIR).tar.xz -C $(PACKAGE_DIR) $(DEB_PACKAGE_DIR)
+	$(V1)tar -cvJf $(PACKAGE_DIR)/$(GCS_PACKAGE_NAME).tar.xz -C $(PACKAGE_DIR) $(GCS_PACKAGE_NAME)
 package_flight_compress: package_flight
 	$(V1)tar -cvJf $(PACKAGE_DIR)/firmware-$(PACKAGE_LBL).tar.xz -C $(FW_DIR) .
 package_matlab_compress: package_matlab

@@ -45,7 +45,7 @@ public slots:
 private slots:
     void onRefreshTimerTimeout();
     void onUpdateFound(gitHubReleaseAPI::release release);
-    void onDialogUpdate();
+    void onDialogStartUpdate();
     void onCancel(bool dontShowAgain);
     void sstr(QString str);
     void processOutputAvailable();
@@ -56,12 +56,16 @@ private slots:
 private:
     bool usePrereleases;
     QTimer refreshTimer;
-    gitHubReleaseAPI api;
+    gitHubReleaseAPI mainAppApi;
+    gitHubReleaseAPI helperAppApi;
     QPointer<updaterFormDialog> dialog;
     gitHubReleaseAPI::release mostRecentRelease;
     QWidget *parent;
     QProcess *process;
     bool fileDecompress(QString fileName, QString destinationPath);
+#ifdef Q_OS_WIN
+    bool winFileDecompress(QString zipfile, QString destinationPath);
+#endif
 signals:
     void updateFound(gitHubReleaseAPI::release release);
     void decompressProgress(int progress);
