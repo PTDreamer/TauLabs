@@ -35,6 +35,12 @@ ML_DIR	     := $(PACKAGE_DIR)/matlab-$(PACKAGE_LBL)
 BL_DIR       := $(FW_DIR)/bootloaders
 BU_DIR       := $(FW_DIR)/bootloader-updaters
 
+ifeq ($(MACHINE_TYPE), x86_64)
+PLATFORM_NAME:=amd64
+else
+PLATFORM_NAME:=i386
+endif
+
 # Clean build options (recommended for package testing only)
 ifeq ($(CLEAN_BUILD), NO)
 CLEAN_GROUND := NO

@@ -29,20 +29,18 @@ DEB_CFG_I386_DIR	:= $(ROOT_DIR)/package/linux/deb_i386
 DEB_CFG_I386_FILES	:= $(shell ls $(DEB_CFG_I386_DIR))
 DEB_CFG_AMD64_DIR	:= $(ROOT_DIR)/package/linux/deb_amd64
 DEB_CFG_AMD64_FILES	:= $(shell ls $(DEB_CFG_AMD64_DIR))
-DEB_PLATFORM		:= amd64
 DEB_MACHINE_DIR		:= $(DEB_CFG_AMD64_DIR)
 DEB_MACHINE_FILES	:= $(DEB_CFG_AMD64_FILES)
 MACHINE_TYPE		:= $(shell uname -m)
 ifneq ($(MACHINE_TYPE), x86_64)
- DEB_PLATFORM		:= i386
  DEB_MACHINE_DIR	:= $(DEB_CFG_I386_DIR)
  DEB_MACHINE_FILES	:= $(DEB_CFG_I386_FILES)
 endif
 ALL_DEB_FILES  = $(foreach f, $(DEB_CFG_CMN_FILES), $(DEB_BUILD_DIR)/$(f))
 ALL_DEB_FILES += $(foreach f, $(DEB_MACHINE_FILES), $(DEB_BUILD_DIR)/$(f))
 
-DEB_PACKAGE_DIR	:= taulabsgcs_$(DEB_PLATFORM)-$(VERSION_FULL)
-DEB_PACKAGE_NAME:= taulabs_$(VERSION_FULL)_$(DEB_PLATFORM)
+DEB_PACKAGE_DIR	:= taulabsgcs_$(PLATFORM_NAME)-$(VERSION_FULL)
+DEB_PACKAGE_NAME:= taulabs_$(VERSION_FULL)_$(PLATFORM_NAME)
 
 QT_PLUGINS_USED		:= imageformats platforms sqldrivers xcbglintegrations
 

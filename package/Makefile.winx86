@@ -9,6 +9,8 @@ NSIS_SCRIPT   := $(NSIS_DIR)/taulabs.nsi
 NSIS_TEMPLATE := $(NSIS_DIR)/taulabs.tpl
 NSIS_HEADER   := $(BUILD_DIR)/ground/gcs/taulabs.nsh
 
+PACKAGE_NAME:=taulabsgcs_$(PLATFORM_NAME)
+
 standalone: gcs
 	$(V1) windeployqt -printsupport -concurrent -gui -opengl -xml -quick -quickwidgets -test -script -sql -serialport -multimedia -multimediawidgets --list relative --qmldir $(ROOT_DIR)/build/ground/gcs/share/taulabs/welcome $(ROOT_DIR)/build/ground/gcs/bin/taulabsgcs.exe 
 	$(V1) windeployqt -printsupport -concurrent -gui -opengl -xml -quick -quickwidgets -test -script -sql -serialport -multimedia -multimediawidgets --qmldir $(ROOT_DIR)/build/ground/gcs/share/taulabs/welcome $(ROOT_DIR)/build/ground/gcs/bin/taulabsgcs.exe 
@@ -21,9 +23,27 @@ win_package: standalone package_flight package_matlab
 	$(V1) echo "  http://www.scratchpaper.com"
 	$(NSIS_CMD) $(NSIS_OPTS) $(NSIS_SCRIPT)
 
+ground_package:
+	@echo On target XXXX $(PACKAGE_DIR)/$(PACKAGE_NAME)
+	$(V1) mkdir -p "$(dir $(PACKAGE_DIR))"
+	$(V1) mkdir -p "$(dir $(PACKAGE_DIR)/$(PACKAGE_NAME)/bin)"
+	$(V1) mkdir -p "$(dir $(PACKAGE_DIR)/$(PACKAGE_NAME)/share)"
+	$(V1) mkdir -p "$(dir $(PACKAGE_DIR)/$(PACKAGE_NAME)/lib)"
+	$(V1)cp -v -R $(BUILD_DIR)/ground/gcs/bin $(PACKAGE_DIR)/$(PACKAGE_NAME)
+	$(V1)cp -v -R $(BUILD_DIR)/ground/gcs/share $(PACKAGE_DIR)/$(PACKAGE_NAME)
+	$(V1)cp -v -R $(BUILD_DIR)/ground/gcs/lib $(PACKAGE_DIR)/$(PACKAGE_NAME)
+	$(V1)cp -v $(ROOT_DIR)/HISTORY.txt $(PACKAGE_DIR)/$(PACKAGE_NAME)
+	$(V1)cp -v $(ROOT_DIR)/KNOWN_ISSUES.txt $(PACKAGE_DIR)/$(PACKAGE_NAME)
+	$(V1)cp -v $(ROOT_DIR)/CREDITS.txt $(PACKAGE_DIR)/$(PACKAGE_NAME)
+	$(V1)cp -v $(ROOT_DIR)/LICENSE.txt $(PACKAGE_DIR)/$(PACKAGE_NAME)
+	$(V1)find $(PACKAGE_DIR)/$(PACKAGE_NAME) -type f -name "*Makefile" -exec rm -f {} \;
+	$(V1)find $(PACKAGE_DIR)/$(PACKAGE_NAME) -type f -name "*qmake.cache" -exec rm -f {} \;
+	$(V1)find $(PACKAGE_DIR)/$(PACKAGE_NAME) -type f -name "*udp_test" -exec rm -f {} \;
+	$(V1)find $(PACKAGE_DIR)/$(PACKAGE_NAME) -type f -name "*gcsversioninfo.h" -exec rm -f {} \;
+	$(V1)cd $(PACKAGE_DIR)/$(PACKAGE_NAME) && find . \( -type f -o -type l \) -print > $(PACKAGE_DIR)/$(PACKAGE_NAME)/filelist.lst
+
+
 gcs: uavobjects_gcs
 	$(V1) $(MAKE) -C $(ROOT_DIR) GCS_BUILD_CONF=release $@
-
-ground_package: | win_package
 
 .PHONY: gcs ground_package win_package
