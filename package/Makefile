@@ -131,12 +131,12 @@ package_matlab: | matlab
 
 package_ground: | ground_package
 
-package: | linux_deb_package
+package_installer: | linux_deb_package
 
 package_all: package_flight package_ground package_matlab
 
 .PHONY: help uavobjects_flight uavobjects_gcs uavobjects_matlab all_clean 
-.PHONY: package_ground package_flight package_matlab package_all
+.PHONY: package_ground package_flight package_matlab package_all package_installer
 
 # tlfw_resource must be generated before the ground package,
 # and it depends on flight firmware images
