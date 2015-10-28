@@ -37,7 +37,7 @@ package_matlab_compress: package_matlab
 package_all_compress: package_all
 	$(V1)cd $(PACKAGE_DIR)/../ && $(ZIP_DIR)/zip.exe -r --exclude=*.zip $(BUILD_DIR)/$(PACKAGE_LBL) $(PACKAGE_DIR)
 
-gcs: uavobjects_gcs
+gcs: uavobjects_gcs | tlfw_resource
 	$(V1) $(MAKE) -C $(ROOT_DIR) GCS_BUILD_CONF=release $@
 
 .PHONY: gcs ground_package win_package
