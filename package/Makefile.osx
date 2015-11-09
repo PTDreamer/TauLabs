@@ -13,6 +13,7 @@ VOL_NAME="Tau Labs"
 standalone: gcs
 	"${ROOT_DIR}/package/osx/libraries" ${APP_PATH}/${APP_NAME}
 
+ground_package_os_specific: ground_package_common
 
 # puts the files into a dmg
 dmg: standalone package_flight package_matlab
@@ -26,7 +27,7 @@ dmg: standalone package_flight package_matlab
 gcs: uavobjects_gcs
 	$(V1) $(MAKE) -C $(ROOT_DIR) GCS_BUILD_CONF=release $@
 
-ground_package: | dmg
+installer_package: | dmg
 
 
 .PHONY: gcs ground_package osx_package

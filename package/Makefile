@@ -49,7 +49,7 @@ else
 CLEAN_GROUND := YES
 CLEAN_FLIGHT := YES
 endif
-
+GMAKE?=$(MAKE) --no-print-directory -w 
 # Set up targets
 ALL_BOARDS        := coptercontrol pipxtreme revomini sparky sparky2 sparkybgc quanton colibri flyingf3 flyingf4 aq32 naze32
 ALL_BOARDS_BU     := coptercontrol pipxtreme coptercontrol pipxtreme revomini sparky sparky2 sparkybgc quanton colibri flyingf3 flyingf4 aq32
@@ -72,11 +72,12 @@ help:
 	@echo "   Here is a summary of the available targets:"
 	@echo
 	@echo "   [Packaging]"
-	@echo "     package        - Build and package the Tau Labs distributable (DEB)"
-	@echo "     package_flight - Build and package the Tau Labs flight firmware only"
-	@echo "     package_ground - Build and package the Tau Labs ground software only"
-	@echo "     package_matlab - Build and package the Tau Labs matlab script only"
-	@echo "     package_all    - Build and package all Tau Labs firmware and software"
+	@echo "     package        			- Build and package the Tau Labs distributable (DEB)"
+	@echo "     package_flight 			- Build and package the Tau Labs flight firmware only"
+	@echo "     package_ground 			- Build and package the Tau Labs ground software only"
+	@echo "     package_matlab 			- Build and package the Tau Labs matlab script only"
+	@echo "     package_all    			- Build and package all Tau Labs firmware and software"
+	@echo "     package_XXXX_compress   - Same as the targets above but compresses the package"	
 	@echo
 	@echo "   Notes:"
 	@echo "     - packages will be placed in $(PACKAGE_DIR)"
@@ -141,15 +142,17 @@ package_installer: | installer_package
 
 package_all: package_flight package_ground package_matlab
 
+package_info:
+	$(shell $(VERSION_CMD) --uavodir=$(ROOT_DIR)/shared/uavobjectdefinition --template=$(ROOT_DIR)/make/templates/packageversioninfo.json --outfile=$(PACKAGE_DIR)/packageversioninfo.json)
+
 .PHONY: help uavobjects_flight uavobjects_gcs uavobjects_matlab all_clean 
-.PHONY: package_ground package_flight package_matlab package_all package_installer
+.PHONY: package_ground package_flight package_matlab package_all package_installer package_info
 
 # tlfw_resource must be generated before the ground package,
 # and it depends on flight firmware images
 ground_package: ground_package_os_specific
 	@echo $@ starting
 	$(V1)cd $(PACKAGE_DIR)/$(GCS_PACKAGE_NAME) && find . \( -type f -o -type l \) -print > $(PACKAGE_DIR)/$(GCS_PACKAGE_NAME)/filelist.lst
-
 tlfw_resource: | all_fw all_bu
 
 # Decide on a verbosity level based on the V= parameter
