@@ -53,6 +53,8 @@ QWidget *AutoUpdaterOptionsPage::createPage(QWidget *parent)
     m_page->gitHubAPIUrl->setText(m_config->getGitHubAPIUrl());
     m_page->usePreReleases->setChecked(m_config->getUsePreRelease());
     m_page->interval->setValue(m_config->getRefreshInterval());
+    m_page->gitHubUsername->setText(m_config->getGitHubUsername());
+    m_page->gitHubPassword->setText(m_config->getGitHubPassword());
     return w;
 }
 
@@ -61,6 +63,8 @@ void AutoUpdaterOptionsPage::apply()
     m_config->setGitHubAPIUrl(m_page->gitHubAPIUrl->text());
     m_config->setRefreshInterval(m_page->interval->value());
     m_config->setUsePreRelease(m_page->usePreReleases->isChecked());
+    m_config->setGitHubUsername(m_page->gitHubUsername->text());
+    m_config->setGitHubPassword(m_page->gitHubPassword->text());
     emit settingsUpdated();
 }
 

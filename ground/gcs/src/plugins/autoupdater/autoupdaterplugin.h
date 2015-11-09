@@ -61,6 +61,12 @@ public:
     QString getGitHubAPIUrl() const;
     void setGitHubAPIUrl(const QString &value);
 
+    QString getGitHubUsername() const;
+    void setGitHubUsername(const QString &value);
+
+    QString getGitHubPassword() const;
+    void setGitHubPassword(const QString &value);
+
 protected slots:
     void updateSettings();
 private:
@@ -70,6 +76,8 @@ private:
     bool usePreRelease;
     int refreshInterval;
     QString gitHubAPIUrl;
+    QString gitHubUsername;
+    QString gitHubPassword;
 };
 
 #endif // AUTOUPDATERPLUGIN_H

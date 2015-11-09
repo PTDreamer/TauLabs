@@ -6,6 +6,7 @@ TARGET = AutoUpdater
 include(../../taulabsgcsplugin.pri)
 include(../uavtalk/uavtalk.pri)
 include(autoupdater_dependencies.pri)
+INCLUDEPATH *= $$GCS_BUILD_TREE
 HEADERS += \
     autoupdaterplugin.h \
     autoupdater_global.h \

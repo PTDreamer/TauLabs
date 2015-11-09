@@ -28,13 +28,14 @@
 #include "ui_updaterformdialog.h"
 #include <QDebug>
 
-updaterFormDialog::updaterFormDialog(QString releaseDetails, QWidget *parent) :
+updaterFormDialog::updaterFormDialog(QString releaseDetails, bool changedUAVO, QWidget *parent) :
     QDialog(parent),
     ui(new Ui::updaterFormDialog)
 {
     ui->setupUi(this);
     ui->updateDetails->setText(releaseDetails);
     ui->updateDetails2->setText(releaseDetails);
+    ui->changedUAVOWarning->setVisible(changedUAVO);
     connect(ui->update, SIGNAL(clicked(bool)), this, SLOT(onStartUpdate()));
     connect(ui->downloadHide, SIGNAL(clicked(bool)), this, SLOT(onHide()));
     connect(ui->downloadCancel, SIGNAL(clicked(bool)), this, SIGNAL(cancelDownload()));

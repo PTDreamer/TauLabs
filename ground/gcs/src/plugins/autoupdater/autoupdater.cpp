@@ -1,3 +1,4 @@
+
 /**
  ******************************************************************************
  * @file       autoupdater.c
@@ -35,12 +36,20 @@
 #include "3rdparty/quazip/quazipfile.h"
 #include <QThread>
 #include <QFuture>
-#include <qtconcurrentrun.h>
+#include <QFutureWatcher>
+#include <QtConcurrentRun>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonValue>
+#include "gcsversioninfo.h"
+#include "coreplugin/coreconstants.h"
 
-AutoUpdater::AutoUpdater(QWidget *parent, UAVObjectManager * ObjMngr, int refreshIntervalSec, bool usePrereleases, QString gitHubUrl) : usePrereleases(usePrereleases), mainAppApi(this), helperAppApi(this), dialog(NULL), parent(parent)
+AutoUpdater::AutoUpdater(QWidget *parent, UAVObjectManager * ObjMngr, int refreshIntervalSec, bool usePrereleases, QString gitHubUrl,  QString gitHubUsername, QString gitHubPassword) : usePrereleases(usePrereleases), mainAppApi(this), helperAppApi(this), dialog(NULL), parent(parent)
 {
     refreshTimer.setInterval(refreshIntervalSec * 1000);
     mainAppApi.setRepo(gitHubUrl);
+    if(!gitHubUsername.isEmpty() && !gitHubPassword.isEmpty())
+        mainAppApi.setCredentials(gitHubUsername, gitHubPassword);
     helperAppApi.setRepo("PTDreamer", "copyApp");
 
     if(refreshIntervalSec != 0)
@@ -57,16 +66,15 @@ AutoUpdater::AutoUpdater(QWidget *parent, UAVObjectManager * ObjMngr, int refres
     connect(&helperAppApi, SIGNAL(downloadProgress(qint64,qint64)), this, SLOT(downloadProgress(qint64,qint64)));
     process = new QProcess(parent);
     connect(process, SIGNAL(finished(int,QProcess::ExitStatus)), this, SLOT(processOutputAvailable()));
-    gitHubReleaseAPI::release r;
-    onUpdateFound(r);
-    fileDecompress("C:/code/TauLabs/build/package-20151015-e588d82e-dirty/taulabsgcs_i386-20151015-e588d82e-dirty.zip", QDir::tempPath());
 }
 
-void AutoUpdater::refreshSettings(int refreshInterval, bool usePrereleases, QString gitHubUrl)
+void AutoUpdater::refreshSettings(int refreshInterval, bool usePrereleases, QString gitHubUrl, QString gitHubUsername, QString gitHubPassword)
 {
     refreshTimer.setInterval(refreshInterval *1000);
     usePrereleases = usePrereleases;
     mainAppApi.setRepo(gitHubUrl);
+    if(!gitHubUsername.isEmpty() && !gitHubPassword.isEmpty())
+        mainAppApi.setCredentials(gitHubUsername, gitHubPassword);
     if(refreshInterval == 0)
         refreshTimer.stop();
     else
@@ -76,7 +84,7 @@ void AutoUpdater::refreshSettings(int refreshInterval, bool usePrereleases, QStr
 void AutoUpdater::onRefreshTimerTimeout()
 {
     bool isUpdateFound = false;
-    QDateTime currentGCSDate;
+
     if(!usePrereleases) {
         mostRecentRelease = mainAppApi.getLatestRelease();
         if(mainAppApi.getLastError() != gitHubReleaseAPI::NO_ERROR)
@@ -93,19 +101,22 @@ void AutoUpdater::onRefreshTimerTimeout()
                 mostRecentRelease = release;
         }
     }
-    qDebug() << mostRecentRelease.name << mostRecentRelease.published_at;
-    if(mostRecentRelease.published_at > currentGCSDate)
+    packageVersionInfo info;
+    info = parsePackageVersionInfo(mostRecentRelease);
+    if(!info.isValid)
+        return;
+    if(info.isNewer)
         isUpdateFound = true;
     if(true || isUpdateFound)//remove true
-        emit updateFound(mostRecentRelease);
+        emit updateFound(mostRecentRelease, info);
 }
 
-void AutoUpdater::onUpdateFound(gitHubReleaseAPI::release release)
+void AutoUpdater::onUpdateFound(gitHubReleaseAPI::release release, packageVersionInfo info)
 {
     if(!dialog.isNull()) {
         return;
     }
-    dialog = new updaterFormDialog(release.body, parent);
+    dialog = new updaterFormDialog(release.body, info.isUAVODifferent, parent);
     dialog.data()->show();
     dialog.data()->raise();
     dialog.data()->activateWindow();
@@ -134,7 +145,7 @@ void AutoUpdater::onDialogStartUpdate()
     int copyAppID = -1;
     emit currentOperationMessage(tr("Looking for latest helper application"));
     QHash<int, gitHubReleaseAPI::GitHubAsset> copyAppAssets = helperAppApi.getLatestRelease().assets;
-    if(copyAppAssets.values().length() == 0) {
+    if(copyAppAssets.values().size() == 0) {
         QMessageBox::critical(parent, tr("ERROR"), tr("Could not retrieve helper application needed for the update process"));
         dialog.data()->close();
         return;
@@ -156,6 +167,7 @@ void AutoUpdater::onDialogStartUpdate()
     int appID = -1;
     emit currentOperationMessage(tr("Looking for latest application file package"));
     foreach (int assetID, mostRecentRelease.assets.keys()) {
+        qDebug() << mostRecentRelease.assets.value(assetID).label << mostRecentRelease.assets.value(assetID).name << compatiblePlatformStr << preferredPlatformStr;
         if(mostRecentRelease.assets.value(assetID).label.contains(compatiblePlatformStr, Qt::CaseInsensitive)) {
             appID = assetID;
         }
@@ -186,19 +198,31 @@ void AutoUpdater::onDialogStartUpdate()
     }
     file.write(fileData);
     emit currentOperationMessage(tr("Decompressing new application compressed file"));
-    if(!fileDecompress(file.fileName(), QDir::tempPath())) {
+#ifdef Q_OS_WIN
+#define EXEC "taulabsgcs.exe"
+#define COPY_APP_EXEC "copyApp.exe"
+#else
+#define EXEC "taulabsgcs"
+#define COPY_APP_EXEC "copyApp"
+#endif
+
+    AutoUpdater::decompressResult appDecompressResult = fileDecompress(file.fileName(), QDir::tempPath(), QFileInfo(qApp->applicationFilePath()).fileName());
+    if(!(appDecompressResult.success && appDecompressResult.execPath.exists())) {
         QMessageBox::critical(parent, tr("ERROR"), tr("Something went wrong during file decompression!"));
         return;
     }
     emit currentOperationMessage(tr("Decompressing helper application"));
-    if(!fileDecompress(copyAppFile.fileName(), QDir::tempPath())) {
+    AutoUpdater::decompressResult copyAppDecompressResult = fileDecompress(copyAppFile.fileName(), QDir::tempPath(), COPY_APP_EXEC);
+    qDebug() << copyAppDecompressResult.execPath << appDecompressResult.execPath;
+    if(!(copyAppDecompressResult.success && copyAppDecompressResult.execPath.exists())) {
         QMessageBox::critical(parent, tr("ERROR"), tr("Something went wrong during file decompression!"));
         return;
     }
     QDir appDir = QApplication::applicationDirPath();
     appDir.cdUp();
     QMessageBox::information(parent, tr("Update Ready"), tr("The file fetching process is completed, press ok to continue the update"));
-    process->startDetached(QDir::tempPath() + QDir::separator() + "package" + QDir::separator() + "copyApp", QStringList() << QDir::tempPath() + QDir::separator() + QFileInfo(file).baseName() <<  appDir.absolutePath() << QApplication::applicationFilePath());
+    appDecompressResult.execPath.cdUp();
+    process->startDetached(copyAppDecompressResult.execPath.absolutePath() + QDir::separator() + COPY_APP_EXEC, QStringList() << appDecompressResult.execPath.absolutePath() <<  appDir.absolutePath() << QApplication::applicationFilePath());
     QApplication::quit();
 }
 
@@ -233,34 +257,42 @@ void AutoUpdater::downloadProgress(qint64 progress, qint64 total)
 
 void AutoUpdater::onNewOperation(QString newOp)
 {
-    dialog.data()->setOperation(newOp);
+    if(!dialog.isNull())
+        dialog.data()->setOperation(newOp);
 }
 
 void AutoUpdater::onProgressText(QString newTxt)
 {
-    dialog.data()->setProgress(newTxt);
+    if(!dialog.isNull())
+        dialog.data()->setProgress(newTxt);
 }
 
 void AutoUpdater::onProgress(int value)
 {
-    dialog.data()->setProgress(value);
+    if(!dialog.isNull())
+        dialog.data()->setProgress(value);
 }
 
 #ifdef Q_OS_LINUX
-bool AutoUpdater::fileDecompress(QString fileName, QString destinationPath)
+AutoUpdater::decompressResult AutoUpdater::fileDecompress(QString fileName, QString destinationPath, QString execFile)
 {
+    AutoUpdater::decompressResult ret;
     qDebug() << "1-" << fileName << destinationPath;
     QFile file(fileName);
-    if(!file.exists())
-        return false;
+    if(!file.exists()) {
+        ret.success = false;
+        return ret;
+    }
     QString cmd = QString("/bin/sh -c \"xz -l %0 | grep -oh -m2 \"[0-9]*\\.[0-9].MiB\" | tail -1\"").arg(fileName);
     QEventLoop loop;
     QProcess process;
     connect(&process, SIGNAL(finished(int)), &loop, SLOT(quit()));
     process.start(cmd);
     loop.exec();
-    if(process.exitStatus() != QProcess::NormalExit)
-        return false;
+    if(process.exitStatus() != QProcess::NormalExit) {
+        ret.success = false;
+        return ret;
+    }
     QString totalSizeStr = process.readAll();
     QString unit = totalSizeStr.split(" ").value(1);
     QString value = totalSizeStr.split(" ").value(0);
@@ -290,6 +322,10 @@ bool AutoUpdater::fileDecompress(QString fileName, QString destinationPath)
             receiveBuffer = QString(process.readLine());
             if(!receiveBuffer.isEmpty()) {
                 emit progressMessage(QString("Extracting %0").arg(QString(receiveBuffer.split(QRegExp("\\s+")).value(5)).split(QDir::separator()).last()));
+                if(QString(receiveBuffer.split(QRegExp("\\s+")).value(5)).split(QDir::separator()).last() == execFile) {
+                    ret.execPath = QDir(QFileInfo(receiveBuffer.split(QRegExp("\\s+")).value(5)).absolutePath());
+                    ret.execPath.cdUp();
+                }
                 qDebug() << QString("Extracting %0").arg(receiveBuffer.split(QRegExp("\\s+")).value(5));
                 if(size != 0) {
                     QString s = receiveBuffer.split(QRegExp("\\s+")).value(2);
@@ -302,27 +338,41 @@ bool AutoUpdater::fileDecompress(QString fileName, QString destinationPath)
         } while (process.canReadLine());
 
     }
-    if(process.exitStatus() != QProcess::NormalExit)
-        return false;
+    if(process.exitStatus() != QProcess::NormalExit) {
+        ret.success = false;
+        return ret;
+    }
     emit decompressProgress(100);
-    return true;
+    ret.success = true;
+    return ret;
 }
 #endif
 #ifdef Q_OS_WIN
-bool AutoUpdater::fileDecompress(QString zipfile, QString destinationPath)
+AutoUpdater::decompressResult AutoUpdater::fileDecompress(QString zipfile, QString destinationPath, QString execFile)
 {
-    qDebug()<<"XXXXX1" << zipfile;
-    QFuture <bool> future = QtConcurrent::run(this, &AutoUpdater::winFileDecompress, zipfile, destinationPath);
-    return true;
+    AutoUpdater::decompressResult res;
+    QEventLoop loop;
+    QFutureWatcher<AutoUpdater::decompressResult> watcher;
+    connect(&watcher, SIGNAL(finished()), &loop, SLOT(quit()));
+    if(!QFile(zipfile).exists())
+        return res;
+    QFuture <AutoUpdater::decompressResult> future = QtConcurrent::run(this, &AutoUpdater::winFileDecompress, zipfile, destinationPath, execFile);
+    watcher.setFuture(future);
+    loop.exec();
+    return future.result();
 }
-bool AutoUpdater::winFileDecompress(QString zipfile, QString destinationPath)
+
+AutoUpdater::decompressResult AutoUpdater::winFileDecompress(QString zipfile, QString destinationPath, QString exeFile)
 {
+    AutoUpdater::decompressResult ret;
     qDebug() << "winFileDecompress" << zipfile << destinationPath;
     qint64 totalDecompressedSize = 0;
     QDir destination(destinationPath);
     QuaZip archive(zipfile);
-    if(!archive.open(QuaZip::mdUnzip))
-        return false;
+    if(!archive.open(QuaZip::mdUnzip)) {
+        ret.success = false;
+        return ret;
+    }
     qDebug() << "winFileDecompress open";
     for( bool f = archive.goToFirstFile(); f; f = archive.goToNextFile() )
     {
@@ -335,14 +385,15 @@ bool AutoUpdater::winFileDecompress(QString zipfile, QString destinationPath)
     qint64 currentDecompressedSize = 0;
     for( bool f = archive.goToFirstFile(); f; f = archive.goToNextFile() )
     {
-        emit progressMessage(QString("Extracting %0").arg(archive.getCurrentFileName()));
         // set source file in archive
         QString filePath = archive.getCurrentFileName();
         qDebug() << "decompress" << filePath;
         QuaZipFile zFile( archive.getZipName(), filePath );
         // open the source file
-        if(!zFile.open( QIODevice::ReadOnly ))
-            return false;
+        if(!zFile.open( QIODevice::ReadOnly )) {
+            ret.success = false;
+            return ret;
+        }
         // create a bytes array and write the file data into it
         QByteArray ba = zFile.readAll();
         currentDecompressedSize += ba.size();
@@ -357,13 +408,20 @@ bool AutoUpdater::winFileDecompress(QString zipfile, QString destinationPath)
             qDebug() << "decompress" << "ISDIR";
         }
         else {
+            emit progressMessage(QString("Extracting %0").arg(file.fileName()));
             qDebug() << "decompress FILE" << destination.absolutePath() << file.fileName();
-            QFile dstFile( destination.absolutePath()+file.fileName() );
-            qDebug() << destination.absolutePath()+QDir::separator()+file.fileName();
+            QDir dir = QFileInfo(destination.absolutePath()+ QDir::separator() + filePath).absolutePath();
+            if(!exeFile.isEmpty() && (exeFile == file.fileName()))
+                ret.execPath = dir;
+            if(!dir.exists())
+                QDir().mkdir(dir.absolutePath());
+            QFile dstFile(destination.absolutePath()+ QDir::separator() + filePath);
+            qDebug() << destination.absolutePath()+ QDir::separator() + filePath;
             // open the destination file
             if(!dstFile.open( QIODevice::WriteOnly)) {
                 qDebug() << "decompress COULD NOT OPEN FILE FOR WRITE" << dstFile.fileName();
-                return false;
+                ret.success = false;
+                return ret;
             }
             qDebug() << "EXIT";
             // write the data from the bytes array into the destination file
@@ -373,6 +431,50 @@ bool AutoUpdater::winFileDecompress(QString zipfile, QString destinationPath)
         }
     }
     emit decompressProgress(100);
-    return true;
+    ret.success = true;
+    return ret;
 }
 #endif
+
+AutoUpdater::packageVersionInfo AutoUpdater::parsePackageVersionInfo(gitHubReleaseAPI::release release)
+{
+    AutoUpdater::packageVersionInfo ret;
+    int versionInfoID = -1;
+    foreach (int key, release.assets.keys()) {
+        if(release.assets.value(key).name == "packageversioninfo.json") {
+            versionInfoID = key;
+        }
+    }
+    if(versionInfoID == -1) {
+        ret.isValid = false;
+        return ret;
+    }
+    QByteArray versionInfoData = mainAppApi.downloadAsset(versionInfoID);
+    QJsonDocument doc = QJsonDocument::fromJson(versionInfoData);
+    if(doc.isNull()) {
+        ret.isValid = false;
+        return ret;
+    }
+    QJsonObject obj = doc.object();
+    QJsonValue val = obj.value("package_info");
+    if(val.isUndefined()) {
+        ret.isValid = false;
+        return ret;
+    }
+    if(!val.toObject().value("uavo_hash").isUndefined())
+        ret.uavo_hash = val.toObject().value("uavo_hash").toString();
+    if(!val.toObject().value("uavo_hash_text").isUndefined())
+        ret.uavo_hash_txt = val.toObject().value("uavo_hash_text").toString();
+    if(!val.toObject().value("date").isUndefined())
+        ret.date = QDateTime::fromString(val.toObject().value("date").toString(),"yyyyMMdd hh:mm");
+    QDateTime currentGCSDate;
+    QString versionData = QLatin1String(Core::Constants::GCS_REVISION_STR);
+    currentGCSDate = QDateTime::fromString(versionData.split(" ").last(),"yyyyMMdd");
+    if(ret.date > currentGCSDate)
+        ret.isNewer = true;
+    else
+        ret.isNewer = false;
+    QString uavoHash = QString::fromLatin1(Core::Constants::UAVOSHA1_STR);
+    ret.isUAVODifferent = (uavoHash != ret.uavo_hash);
+    return ret;
+}

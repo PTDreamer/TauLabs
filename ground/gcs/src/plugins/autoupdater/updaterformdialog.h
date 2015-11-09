@@ -39,7 +39,7 @@ class updaterFormDialog : public QDialog
     Q_OBJECT
 
 public:
-    explicit updaterFormDialog(QString releaseDetails, QWidget *parent = 0);
+    explicit updaterFormDialog(QString releaseDetails, bool changedUAVO, QWidget *parent = 0);
     ~updaterFormDialog();
 
 private:

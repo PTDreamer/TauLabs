@@ -34,17 +34,34 @@
 #include "updaterformdialog.h"
 #include <QPointer>
 #include <QProcess>
+#include <QDir>
 
 class AutoUpdater: public QObject
 {
     Q_OBJECT
 public:
-    AutoUpdater(QWidget *parent, UAVObjectManager * ObjMngr, int refreshInterval, bool usePrereleases, QString gitHubUrl);
+    AutoUpdater(QWidget *parent, UAVObjectManager * ObjMngr, int refreshInterval, bool usePrereleases, QString gitHubUrl, QString gitHubUsername, QString gitHubPassword);
+    struct decompressResult
+    {
+        bool success;
+        QDir execPath;
+    };
+
+    struct packageVersionInfo
+    {
+        QString uavo_hash;
+        QString uavo_hash_txt;
+        QDateTime date;
+        bool isValid;
+        bool isNewer;
+        bool isUAVODifferent;
+    };
+
 public slots:
-    void refreshSettings(int refreshInterval, bool usePrereleases, QString gitHubUrl);
+    void refreshSettings(int refreshInterval, bool usePrereleases, QString gitHubUrl, QString gitHubUsername, QString gitHubPassword);
 private slots:
     void onRefreshTimerTimeout();
-    void onUpdateFound(gitHubReleaseAPI::release release);
+    void onUpdateFound(gitHubReleaseAPI::release release, packageVersionInfo info);
     void onDialogStartUpdate();
     void onCancel(bool dontShowAgain);
     void sstr(QString str);
@@ -62,12 +79,13 @@ private:
     gitHubReleaseAPI::release mostRecentRelease;
     QWidget *parent;
     QProcess *process;
-    bool fileDecompress(QString fileName, QString destinationPath);
+    decompressResult fileDecompress(QString fileName, QString destinationPath, QString execFile);
+    packageVersionInfo parsePackageVersionInfo(gitHubReleaseAPI::release release);
 #ifdef Q_OS_WIN
-    bool winFileDecompress(QString zipfile, QString destinationPath);
+    decompressResult winFileDecompress(QString zipfile, QString destinationPath, QString exeFile);
 #endif
 signals:
-    void updateFound(gitHubReleaseAPI::release release);
+    void updateFound(gitHubReleaseAPI::release release, packageVersionInfo info);
     void decompressProgress(int progress);
     void progressMessage(QString);
     void currentOperationMessage(QString);

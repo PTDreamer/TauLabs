@@ -60,7 +60,7 @@ bool AutoUpdaterPlugin::initialize(const QStringList & arguments, QString * erro
     options = new AutoUpdaterOptionsPage(this);
     addAutoReleasedObject(options);
     UAVObjectManager * objMngr = pm->getObject<UAVObjectManager>();
-    updater = new AutoUpdater(Core::ICore::instance()->mainWindow(), objMngr, refreshInterval, usePreRelease, gitHubAPIUrl);
+    updater = new AutoUpdater(Core::ICore::instance()->mainWindow(), objMngr, refreshInterval, usePreRelease, gitHubAPIUrl, gitHubUsername, gitHubAPIUrl);
     addAutoReleasedObject(updater);
     return true;
 }
@@ -77,12 +77,34 @@ void AutoUpdaterPlugin::readConfig(QSettings *qSettings, UAVConfigInfo *configIn
     refreshInterval = (qSettings->value(QLatin1String("AutoUpdateInterval"), refreshInterval).toInt());
     usePreRelease = (qSettings->value(QLatin1String("AutoUpdateUsePreRelease"), usePreRelease).toBool());
     gitHubAPIUrl = (qSettings->value(QLatin1String("AutoUpdateGitHubURL"), gitHubAPIUrl).toString());
+    gitHubUsername = (qSettings->value(QLatin1String("AutoUpdateGitHubUsername"), gitHubUsername).toString());
+    gitHubPassword = (qSettings->value(QLatin1String("AutoUpdateGitHubPassword"), gitHubPassword).toString());
     qSettings->endGroup();
 }
 void AutoUpdaterPlugin::updateSettings()
 {
     Core::ICore::instance()->saveSettings(this);
 }
+QString AutoUpdaterPlugin::getGitHubPassword() const
+{
+    return gitHubPassword;
+}
+
+void AutoUpdaterPlugin::setGitHubPassword(const QString &value)
+{
+    gitHubPassword = value;
+}
+
+QString AutoUpdaterPlugin::getGitHubUsername() const
+{
+    return gitHubUsername;
+}
+
+void AutoUpdaterPlugin::setGitHubUsername(const QString &value)
+{
+    gitHubUsername = value;
+}
+
 QString AutoUpdaterPlugin::getGitHubAPIUrl() const
 {
     return gitHubAPIUrl;
@@ -120,6 +142,8 @@ void AutoUpdaterPlugin::saveConfig(QSettings *qSettings, UAVConfigInfo *configIn
     qSettings->setValue(QLatin1String("AutoUpdateInterval"), refreshInterval);
     qSettings->setValue(QLatin1String("AutoUpdateUsePreRelease"), usePreRelease);
     qSettings->setValue(QLatin1String("AutoUpdateGitHubURL"), gitHubAPIUrl);
+    qSettings->setValue(QLatin1String("AutoUpdateGitHubUsername"), gitHubUsername);
+    qSettings->setValue(QLatin1String("AutoUpdateGitHubPassword"), gitHubPassword);
     qSettings->endGroup();
     Q_ASSERT(updater);
 }
