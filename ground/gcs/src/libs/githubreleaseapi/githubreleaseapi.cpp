@@ -29,19 +29,24 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
+#include <QApplication>
 
 #define NETWORK_TIMEOUT 250000
+#define DOWNLOAD_STEP "download_step"
+#define CUSTOM_CONTEXT "custom_context"
+#define DATA_CONTAINER "data_container"
 
 gitHubReleaseAPI::gitHubReleaseAPI(QObject *parent) : QObject(parent)
 {
     connect(&m_WebCtrl, SIGNAL(finished(QNetworkReply*)), &eventLoop,
-            SLOT(quit()));
+            SLOT(quit()), Qt::DirectConnection);
     connect(&timeOutTimer, SIGNAL(timeout()), &eventLoop,
             SLOT(quit()));
     timeOutTimer.setInterval(NETWORK_TIMEOUT);
     timeOutTimer.setSingleShot(true);
     connect(this, SIGNAL(logInfo(QString)), SLOT(onLogInfo(QString)));
     connect(this, SIGNAL(logError(QString)), SLOT(onLogError(QString)));
+    connect(&m_WebCtrl, SIGNAL(finished(QNetworkReply*)), this, SLOT(onFinishedAssetDownloadStep(QNetworkReply*)));
 }
 
 void gitHubReleaseAPI::setRepo(QString owner, QString repo)
@@ -61,146 +66,130 @@ QString gitHubReleaseAPI::getRepo()
     return m_url;
 }
 
-QHash<int, gitHubReleaseAPI::release> gitHubReleaseAPI::getReleases()
+void gitHubReleaseAPI::getReleases(QVariant context)
 {
-    QHash<int, gitHubReleaseAPI::release> ret;
     QString workUrl = QString("%0%1").arg(m_url).arg("releases");
     QNetworkRequest request;
     request.setUrl(workUrl);
     handleCredentials(request);
-    timeOutTimer.start();
     QNetworkReply *reply = m_WebCtrl.get(request);
+    reply->setProperty(CUSTOM_CONTEXT, context);
+    reply->setProperty(DOWNLOAD_STEP, FETCHING_ALL_RELEASES);
     connect(reply, SIGNAL(downloadProgress(qint64,qint64)), SIGNAL(downloadProgress(qint64,qint64)));
-    eventLoop.exec();
-    if(!timeOutTimer.isActive()) {
-        emit logError("Timeout while getting releases");
-        setLastError(TIMEOUT_ERROR);
-        return ret;
-    }
-    timeOutTimer.stop();
-    if(reply->error() !=QNetworkReply::NoError) {
-        emit logError("Network error:" + reply->errorString());
-        setLastError(NETWORK_ERROR);
-        return ret;
-    }
-    QJsonParseError error;
-    QJsonDocument doc = QJsonDocument::fromJson(reply->readAll(), &error);
-    if(error.error != QJsonParseError::NoError) {
-        emit logError("Parsing failed:" + error.errorString());
-        setLastError(PARSING_ERROR);
-        return ret;
-    }
-    emit logInfo("Parsing succeeded");
-    QJsonArray array = doc.array();
-    foreach (QJsonValue value, array) {
-        release rel = processRelease(value.toObject());
-        ret.insert(rel.id, rel);
-    }
-    reply->deleteLater();
-    setLastError(NO_ERROR);
-    if(ret.values().count() == 0)
-        setLastError(UNDEFINED_ERROR);
-    emit logInfo("Releases fetching finished");
-    return ret;
-}
+ }
 
-gitHubReleaseAPI::release gitHubReleaseAPI::getSingleRelease(int id)
+void gitHubReleaseAPI::getSingleRelease(int id, QVariant context)
 {
-    gitHubReleaseAPI::release ret;
     QString workUrl = QString("%0%1/%2").arg(m_url).arg("releases").arg(id);
     QNetworkRequest request;
     request.setUrl(workUrl);
     handleCredentials(request);
-    timeOutTimer.start();
     QNetworkReply *reply = m_WebCtrl.get(request);
+    reply->setProperty(CUSTOM_CONTEXT, context);
+    reply->setProperty(DOWNLOAD_STEP, FETCHING_RELEASE);
     connect(reply, SIGNAL(downloadProgress(qint64,qint64)), SIGNAL(downloadProgress(qint64,qint64)));
-    eventLoop.exec();
-    if(!timeOutTimer.isActive()) {
-        emit logError("Timeout while getting release");
-        setLastError(TIMEOUT_ERROR);
-        return ret;
-    }
-    timeOutTimer.stop();
-    if(reply->error() !=QNetworkReply::NoError) {
-        emit logError("Network error:" + reply->errorString());
-        setLastError(NETWORK_ERROR);
-        return ret;
-    }
-    QJsonParseError error;
-    QJsonDocument doc = QJsonDocument::fromJson(reply->readAll(), &error);
-    if(error.error != QJsonParseError::NoError) {
-        emit logError("Parsing failed:" + error.errorString());
-        setLastError(PARSING_ERROR);
-        return ret;
-    }
-    setLastError(NO_ERROR);
-    emit logInfo("Release fetching finished");
-    ret = processRelease(doc.object());
-    return ret;
 }
 
-QByteArray gitHubReleaseAPI::downloadAsset(int id)
+void gitHubReleaseAPI::downloadAsset(int id, QVariant context)
 {
-    QByteArray ret;
     QString workUrl = QString("%0%1/%2/%3").arg(m_url).arg("releases").arg("assets").arg(id);
     QNetworkRequest request;
     request.setUrl(workUrl);
-    timeOutTimer.start();
     QNetworkReply *reply = m_WebCtrl.get(request);
-    eventLoop.exec();
-    if(!timeOutTimer.isActive()) {
-        emit logError("Timeout while getting release");
-        setLastError(TIMEOUT_ERROR);
-        return ret;
-    }
-    timeOutTimer.stop();
+    reply->setProperty(DOWNLOAD_STEP, FETCHING_ASSET_URL);
+    reply->setProperty(CUSTOM_CONTEXT, context);
+}
+
+void gitHubReleaseAPI::onFinishedAssetDownloadStep(QNetworkReply *reply)
+{
+    QNetworkRequest request;
+    if(reply->property(DOWNLOAD_STEP).isNull())
+        return;
     if(reply->error() !=QNetworkReply::NoError) {
         emit logError("Network error:" + reply->errorString());
-        setLastError(NETWORK_ERROR);
-        return ret;
+        emit fileDownloaded(NULL, NETWORK_ERROR, reply->property(CUSTOM_CONTEXT));
+        reply->deleteLater();
+        return;
     }
-    QJsonParseError error;
-    QJsonDocument doc = QJsonDocument::fromJson(reply->readAll(), &error);
-    if(error.error != QJsonParseError::NoError) {
-        emit logError("Parsing failed:" + error.errorString());
-        setLastError(PARSING_ERROR);
-        return ret;
-    }
-    GitHubAsset asset = processAsset(doc.object());
-    request.setUrl(asset.browser_download_url);
-    timeOutTimer.start();
-    reply = m_WebCtrl.get(request);
-    eventLoop.exec();
-    if(!timeOutTimer.isActive()) {
-        emit logError("Timeout while getting release asset");
-        setLastError(TIMEOUT_ERROR);
-        return ret;
-    }
-    timeOutTimer.stop();
-    if(reply->error() !=QNetworkReply::NoError) {
-        emit logError("Network error:" + reply->errorString());
-        return ret;
-    }
-    int statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-    qDebug() << statusCode;
-    if(statusCode == 301 || statusCode == 302) {
-        emit logInfo("Received HTML redirect header");
-        QUrl redirectUrl = reply->attribute(QNetworkRequest::RedirectionTargetAttribute).toUrl();
-        request.setUrl(redirectUrl);
-        timeOutTimer.start();
+    if (reply->property(DOWNLOAD_STEP).toInt() == FETCHING_ASSET_URL) {
+        QJsonParseError error;
+        QJsonDocument doc = QJsonDocument::fromJson(reply->readAll(), &error);
+        if(error.error != QJsonParseError::NoError) {
+            emit logError("Parsing failed:" + error.errorString());
+            setLastError(PARSING_ERROR);
+            emit fileDownloaded(NULL, PARSING_ERROR, reply->property(CUSTOM_CONTEXT));
+            reply->deleteLater();
+            return;
+        }
+        GitHubAsset asset = processAsset(doc.object());
+        request.setUrl(asset.browser_download_url);
+        QVariant context = reply->property(CUSTOM_CONTEXT);
+        reply->deleteLater();
         reply = m_WebCtrl.get(request);
         currentNetworkReply = reply;
+        reply->setProperty(CUSTOM_CONTEXT, context);
         connect(reply, SIGNAL(downloadProgress(qint64,qint64)), SIGNAL(downloadProgress(qint64,qint64)));
-        eventLoop.exec();
-        if(reply->error() !=QNetworkReply::NoError) {
-            emit logError("Network error:" + reply->errorString());
-            return ret;
+        reply->setProperty(DOWNLOAD_STEP, FETCHING_ASSET);
+    }
+    else if (reply->property(DOWNLOAD_STEP).toInt() == FETCHING_ASSET) {
+        int statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        if(statusCode == 301 || statusCode == 302) {
+            emit logInfo("Received HTML redirect header");
+            QUrl redirectUrl = reply->attribute(QNetworkRequest::RedirectionTargetAttribute).toUrl();
+            request.setUrl(redirectUrl);
+            QVariant context = reply->property(CUSTOM_CONTEXT);
+            reply->deleteLater();
+            reply = m_WebCtrl.get(request);
+            reply->setProperty(CUSTOM_CONTEXT, context);
+            currentNetworkReply = reply;
+            connect(reply, SIGNAL(downloadProgress(qint64,qint64)), SIGNAL(downloadProgress(qint64,qint64)));
+            reply->setProperty(DOWNLOAD_STEP, FETCHING_ASSET);
+        }
+        else {
+            emit fileDownloaded(reply, NO_ERROR, reply->property(CUSTOM_CONTEXT));
         }
     }
-    ret = reply->readAll();
-    setLastError(NO_ERROR);
-    emit logInfo("Asset fetching finished");
-    return ret;
+    else if (reply->property(DOWNLOAD_STEP).toInt() == FETCHING_RELEASE) {
+        gitHubReleaseAPI::release release;
+        QJsonParseError error;
+        QJsonDocument doc = QJsonDocument::fromJson(reply->readAll(), &error);
+        if(error.error != QJsonParseError::NoError) {
+            emit logError("Parsing failed:" + error.errorString());
+            setLastError(PARSING_ERROR);
+            emit releaseDownloaded(release, PARSING_ERROR, reply->property(CUSTOM_CONTEXT));
+            reply->deleteLater();
+            return;
+        }
+        release = processRelease(doc.object());
+        setLastError(NO_ERROR);
+        emit logInfo("Release fetching finished");
+        emit releaseDownloaded(release, NO_ERROR, reply->property(CUSTOM_CONTEXT));
+        reply->deleteLater();
+    }
+    else if (reply->property(DOWNLOAD_STEP).toInt() == FETCHING_ALL_RELEASES) {
+        QHash<int, gitHubReleaseAPI::release> releaseList;
+        QJsonParseError error;
+        QJsonDocument doc = QJsonDocument::fromJson(reply->readAll(), &error);
+        if(error.error != QJsonParseError::NoError) {
+            emit logError("Parsing failed:" + error.errorString());
+            setLastError(PARSING_ERROR);
+            emit allReleasesDownloaded(releaseList, PARSING_ERROR, reply->property(CUSTOM_CONTEXT));
+            reply->deleteLater();
+            return;
+        }
+        emit logInfo("Parsing succeeded");
+        QJsonArray array = doc.array();
+        foreach (QJsonValue value, array) {
+            release rel = processRelease(value.toObject());
+            releaseList.insert(rel.id, rel);
+        }
+        setLastError(NO_ERROR);
+        if(releaseList.values().count() == 0)
+            setLastError(UNDEFINED_ERROR);
+        emit logInfo("Releases fetching finished");
+        emit allReleasesDownloaded(releaseList, getLastError(), reply->property(CUSTOM_CONTEXT));
+        reply->deleteLater();
+    }
 }
 
 gitHubReleaseAPI::GitHubAsset gitHubReleaseAPI::getAsset(int id)
@@ -278,76 +267,53 @@ QList<gitHubReleaseAPI::GitHubAsset> gitHubReleaseAPI::getReleaseAssets(int id)
 
 bool gitHubReleaseAPI::uploadReleaseAsset(QString filename, QString label, int releaseID)
 {
-    if(releaseID < 0)
-        return false;
-    QString uploadURL = getSingleRelease(releaseID).upload_url;
-    QFile file(filename);
-    if(!file.open(QIODevice::ReadOnly)) {
-        emit logError("Could not open file");
-        return false;
-    }
-    QByteArray data = file.readAll();
-    QFileInfo info(filename);
-    QString fname = info.fileName();
-    uploadURL.replace("{?name}", QString("?name=%0&label=%1").arg(fname).arg(label));
+//    if(releaseID < 0)
+//        return false;
+//    QString uploadURL = getSingleRelease(releaseID).upload_url;
+//    QFile file(filename);
+//    if(!file.open(QIODevice::ReadOnly)) {
+//        emit logError("Could not open file");
+//        return false;
+//    }
+//    QByteArray data = file.readAll();
+//    QFileInfo info(filename);
+//    QString fname = info.fileName();
+//    uploadURL.replace("{?name}", QString("?name=%0&label=%1").arg(fname).arg(label));
 
-    QNetworkRequest request;
-    request.setUrl(uploadURL);
-    request.setRawHeader("Content-Type",QMimeDatabase().mimeTypeForFile(filename).name().toLocal8Bit());
-    handleCredentials(request);
-    timeOutTimer.start();
-    QNetworkReply *reply = m_WebCtrl.post(request, data);
-    connect(reply, SIGNAL(uploadProgress(qint64,qint64)), SIGNAL(uploadProgress(qint64,qint64)));
-    eventLoop.exec();
-    if(!timeOutTimer.isActive()) {
-        emit logError("Timeout while uploading release asset");
-        setLastError(TIMEOUT_ERROR);
-        return false;
-    }
-    timeOutTimer.stop();
-    if(reply->error() !=QNetworkReply::NoError) {
-        emit logError("Network error:" + reply->errorString());
-        setLastError(NETWORK_ERROR);
-        return false;
-    }
-    setLastError(NO_ERROR);
-    emit logInfo("Asset uploading finished");
-    return true;
+//    QNetworkRequest request;
+//    request.setUrl(uploadURL);
+//    request.setRawHeader("Content-Type",QMimeDatabase().mimeTypeForFile(filename).name().toLocal8Bit());
+//    handleCredentials(request);
+//    timeOutTimer.start();
+//    QNetworkReply *reply = m_WebCtrl.post(request, data);
+//    connect(reply, SIGNAL(uploadProgress(qint64,qint64)), SIGNAL(uploadProgress(qint64,qint64)));
+//    eventLoop.exec();
+//    if(!timeOutTimer.isActive()) {
+//        emit logError("Timeout while uploading release asset");
+//        setLastError(TIMEOUT_ERROR);
+//        return false;
+//    }
+//    timeOutTimer.stop();
+//    if(reply->error() !=QNetworkReply::NoError) {
+//        emit logError("Network error:" + reply->errorString());
+//        setLastError(NETWORK_ERROR);
+//        return false;
+//    }
+//    setLastError(NO_ERROR);
+//    emit logInfo("Asset uploading finished");
+//    return true;
 }
 
-gitHubReleaseAPI::release gitHubReleaseAPI::getReleaseByTagName(QString name)
+void gitHubReleaseAPI::getReleaseByTagName(QString name, QVariant context)
 {
-    gitHubReleaseAPI::release ret;
     QString workUrl = QString("%0%1/%2/%3").arg(m_url).arg("releases").arg("tags").arg(name);
     QNetworkRequest request;
     request.setUrl(workUrl);
     handleCredentials(request);
-    timeOutTimer.start();
     QNetworkReply *reply = m_WebCtrl.get(request);
+    reply->setProperty(CUSTOM_CONTEXT, context);
+    reply->setProperty(DOWNLOAD_STEP, FETCHING_RELEASE);
     connect(reply, SIGNAL(downloadProgress(qint64,qint64)), SIGNAL(downloadProgress(qint64,qint64)));
-    eventLoop.exec();
-    if(!timeOutTimer.isActive()) {
-        emit logError("Timeout while getting release");
-        setLastError(TIMEOUT_ERROR);
-        return ret;
-    }
-    timeOutTimer.stop();
-    if(reply->error() !=QNetworkReply::NoError) {
-        emit logError("Network error:" + reply->errorString());
-        setLastError(NETWORK_ERROR);
-        return ret;
-    }
-    QJsonParseError error;
-    QJsonDocument doc = QJsonDocument::fromJson(reply->readAll(), &error);
-    if(error.error != QJsonParseError::NoError) {
-        emit logError("Parsing failed:" + error.errorString());
-        setLastError(PARSING_ERROR);
-        return ret;
-    }
-    setLastError(NO_ERROR);
-    emit logInfo("Release fetching finished");
-    ret = processRelease(doc.object());
-    return ret;
 }
 
 gitHubReleaseAPI::release gitHubReleaseAPI::createRelease(gitHubReleaseAPI::newGitHubRelease release)
@@ -542,39 +508,17 @@ bool gitHubReleaseAPI::deleteRelease(int id)
     return true;
 }
 
-gitHubReleaseAPI::release gitHubReleaseAPI::getLatestRelease()
+void gitHubReleaseAPI::getLatestRelease(QVariant context)
 {
-    gitHubReleaseAPI::release ret;
+    qDebug() << "getLatestRelease";
     QString workUrl = QString("%0%1/%2").arg(m_url).arg("releases").arg("latest");
     QNetworkRequest request;
     request.setUrl(workUrl);
     handleCredentials(request);
-    timeOutTimer.start();
     QNetworkReply *reply = m_WebCtrl.get(request);
+    reply->setProperty(CUSTOM_CONTEXT, context);
+    reply->setProperty(DOWNLOAD_STEP, FETCHING_RELEASE);
     connect(reply, SIGNAL(downloadProgress(qint64,qint64)), SIGNAL(downloadProgress(qint64,qint64)));
-    eventLoop.exec();
-    if(!timeOutTimer.isActive()) {
-        emit logError("Timeout while getting release");
-        setLastError(TIMEOUT_ERROR);
-        return ret;
-    }
-    timeOutTimer.stop();
-    if(reply->error() !=QNetworkReply::NoError) {
-        emit logError("Network error:" + reply->errorString());
-        setLastError(NETWORK_ERROR);
-        return ret;
-    }
-    QJsonParseError error;
-    QJsonDocument doc = QJsonDocument::fromJson(reply->readAll(), &error);
-    if(error.error != QJsonParseError::NoError) {
-        emit logError("Parsing failed:" + error.errorString());
-        setLastError(PARSING_ERROR);
-        return ret;
-    }
-    ret = processRelease(doc.object());
-    setLastError(NO_ERROR);
-    emit logInfo("Release fetching finished");
-    return ret;
 }
 
 gitHubReleaseAPI::errors gitHubReleaseAPI::getLastError() const
