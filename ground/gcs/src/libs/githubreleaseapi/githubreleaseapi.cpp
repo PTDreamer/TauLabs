@@ -145,15 +145,8 @@ QByteArray gitHubReleaseAPI::downloadAsset(int id)
     QString workUrl = QString("%0%1/%2/%3").arg(m_url).arg("releases").arg("assets").arg(id);
     QNetworkRequest request;
     request.setUrl(workUrl);
-    timeOutTimer.start();
     QNetworkReply *reply = m_WebCtrl.get(request);
     eventLoop.exec();
-    if(!timeOutTimer.isActive()) {
-        emit logError("Timeout while getting release");
-        setLastError(TIMEOUT_ERROR);
-        return ret;
-    }
-    timeOutTimer.stop();
     if(reply->error() !=QNetworkReply::NoError) {
         emit logError("Network error:" + reply->errorString());
         setLastError(NETWORK_ERROR);
@@ -168,15 +161,8 @@ QByteArray gitHubReleaseAPI::downloadAsset(int id)
     }
     GitHubAsset asset = processAsset(doc.object());
     request.setUrl(asset.browser_download_url);
-    timeOutTimer.start();
     reply = m_WebCtrl.get(request);
     eventLoop.exec();
-    if(!timeOutTimer.isActive()) {
-        emit logError("Timeout while getting release asset");
-        setLastError(TIMEOUT_ERROR);
-        return ret;
-    }
-    timeOutTimer.stop();
     if(reply->error() !=QNetworkReply::NoError) {
         emit logError("Network error:" + reply->errorString());
         return ret;
@@ -187,7 +173,6 @@ QByteArray gitHubReleaseAPI::downloadAsset(int id)
         emit logInfo("Received HTML redirect header");
         QUrl redirectUrl = reply->attribute(QNetworkRequest::RedirectionTargetAttribute).toUrl();
         request.setUrl(redirectUrl);
-        timeOutTimer.start();
         reply = m_WebCtrl.get(request);
         currentNetworkReply = reply;
         connect(reply, SIGNAL(downloadProgress(qint64,qint64)), SIGNAL(downloadProgress(qint64,qint64)));
