@@ -46,17 +46,29 @@ public:
         bool success;
         QDir execPath;
     };
-
     struct packageVersionInfo
     {
         QString uavo_hash;
         QString uavo_hash_txt;
+        QStringList package_assets;
         QDateTime date;
         bool isValid;
         bool isNewer;
         bool isUAVODifferent;
     };
-
+    enum process_steps {
+        FETCHING_LATEST_APP_RELEASE,
+        FETCHING_LATEST_HELPER_RELEASE,
+        FETCHING_ALL_APP_RELEASES,
+        FETCHING_APP_PACKAGE,
+        FETCHING_HELPER_PACKAGE,
+        FETCHING_VERSION_INFO_FILE
+    };
+    struct download_asset {
+        process_steps step;
+        QVariant data1;
+        QVariant data2;
+    };
 public slots:
     void refreshSettings(int refreshInterval, bool usePrereleases, QString gitHubUrl, QString gitHubUsername, QString gitHubPassword);
 private slots:
@@ -69,25 +81,33 @@ private slots:
     void onNewOperation(QString newOp);
     void onProgressText(QString newTxt);
     void onProgress(int value);
+    void onLatestReleaseFetchingCompleted(gitHubReleaseAPI::release release, gitHubReleaseAPI::errors error, QVariant context);
+    void onAllReleasesFetchingCompleted(QHash<int, gitHubReleaseAPI::release> releaseList, gitHubReleaseAPI::errors error, QVariant context);
+    void onFileDownloaded(QNetworkReply *reply, gitHubReleaseAPI::errors error, QVariant context);
 private:
+    QString preferredPlatformStr;
+    QString compatiblePlatformStr;
     bool usePrereleases;
     QTimer refreshTimer;
     gitHubReleaseAPI mainAppApi;
     gitHubReleaseAPI helperAppApi;
     QPointer<updaterFormDialog> dialog;
-    gitHubReleaseAPI::release mostRecentRelease;
     QWidget *parent;
     QProcess *process;
     decompressResult fileDecompress(QString fileName, QString destinationPath, QString execFile);
-    packageVersionInfo parsePackageVersionInfo(gitHubReleaseAPI::release release);
+    void processLatestRelease(gitHubReleaseAPI::release release);
 #if defined(Q_OS_WIN) || defined(Q_OS_OSX)
     decompressResult zipFileDecompress(QString zipfile, QString destinationPath, QString exeFile);
 #endif
+    int lookForPlattformAsset(QHash<int, gitHubReleaseAPI::GitHubAsset> assets);
 signals:
     void updateFound(gitHubReleaseAPI::release release, packageVersionInfo info);
     void decompressProgress(int progress);
     void progressMessage(QString);
     void currentOperationMessage(QString);
 };
+Q_DECLARE_METATYPE(AutoUpdater::packageVersionInfo)
+Q_DECLARE_METATYPE(AutoUpdater::download_asset)
+Q_DECLARE_METATYPE(AutoUpdater::decompressResult)
 
 #endif // AUTOUPDATER_H

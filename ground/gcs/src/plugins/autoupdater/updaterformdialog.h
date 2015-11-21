@@ -29,6 +29,7 @@
 
 #include <QWidget>
 #include <QDialog>
+#include <QVariant>
 
 namespace Ui {
 class updaterFormDialog;
@@ -39,12 +40,12 @@ class updaterFormDialog : public QDialog
     Q_OBJECT
 
 public:
-    explicit updaterFormDialog(QString releaseDetails, bool changedUAVO, QWidget *parent = 0);
+    explicit updaterFormDialog(QString releaseDetails, bool changedUAVO, QVariant context, QWidget *parent = 0);
     ~updaterFormDialog();
-
+    QVariant getContext() { return context; }
 private:
     Ui::updaterFormDialog *ui;
-
+    QVariant context;
 public slots:
     void onStartUpdate();
     void onHide();

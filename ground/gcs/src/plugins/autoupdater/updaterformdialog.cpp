@@ -28,9 +28,10 @@
 #include "ui_updaterformdialog.h"
 #include <QDebug>
 
-updaterFormDialog::updaterFormDialog(QString releaseDetails, bool changedUAVO, QWidget *parent) :
+updaterFormDialog::updaterFormDialog(QString releaseDetails, bool changedUAVO, QVariant context, QWidget *parent) :
     QDialog(parent),
-    ui(new Ui::updaterFormDialog)
+    ui(new Ui::updaterFormDialog),
+    context(context)
 {
     ui->setupUi(this);
     ui->updateDetails->setText(releaseDetails);
