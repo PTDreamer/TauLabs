@@ -109,7 +109,6 @@ public:
         GitHubUser author;
         QHash<int, GitHubAsset> assets;
     };
-
     struct newGitHubRelease {
         QString tag_name;
         QString target_commitish;
@@ -122,11 +121,11 @@ public:
     release processRelease(QJsonObject obj);
     gitHubReleaseAPI::GitHubUser processUser(QJsonObject obj);
     gitHubReleaseAPI::GitHubAsset processAsset(QJsonObject obj);
-    QHash<int, gitHubReleaseAPI::release> getReleases();
+    void getReleases(QVariant context = QVariant());
 
-    gitHubReleaseAPI::release getSingleRelease(int id);
-    gitHubReleaseAPI::release getLatestRelease();
-    gitHubReleaseAPI::release getReleaseByTagName(QString name);
+    void getSingleRelease(int id, QVariant context = QVariant());
+    void getLatestRelease(QVariant context = QVariant());
+    void getReleaseByTagName(QString name, QVariant context);
 
     gitHubReleaseAPI::release createRelease(gitHubReleaseAPI::newGitHubRelease release);
     void setCredentials(QString username, QString password);
@@ -135,7 +134,7 @@ public:
     void handleCredentials(QNetworkRequest &request);
     QList<gitHubReleaseAPI::GitHubAsset> getReleaseAssets(int id);
     bool uploadReleaseAsset(QString filename, QString label, int releaseID);
-    QByteArray downloadAsset(int id);
+    void downloadAsset(int id, QVariant context);
     gitHubReleaseAPI::GitHubAsset getAsset(int id);
     bool deleteAsset(int id);
     gitHubReleaseAPI::GitHubAsset editAsset(int id, QString filename, QString newLabel);
@@ -144,10 +143,16 @@ public:
 
     QString getRepo();
 private:
+    enum download_asset_step
+    {
+        FETCHING_ASSET_URL,
+        FETCHING_ASSET,
+        FETCHING_RELEASE,
+        FETCHING_ALL_RELEASES
+    };
     QString m_url;
     QString m_username;
     QString m_password;
-    void downloadFile(QUrl &url);
     QNetworkAccessManager m_WebCtrl;
     QEventLoop eventLoop;
     QTimer timeOutTimer;
@@ -156,16 +161,21 @@ private:
 private slots:
     void onLogInfo(QString);
     void onLogError(QString);
-
+    void onFinishedAssetDownloadStep(QNetworkReply *reply);
 public slots:
     void abortOperation();
 
 signals:
-    void fileDownloaded();
+    void fileDownloaded(QNetworkReply *reply, gitHubReleaseAPI::errors error, QVariant context);
+    void releaseDownloaded(gitHubReleaseAPI::release release, gitHubReleaseAPI::errors error, QVariant context);
+    void allReleasesDownloaded(QHash<int, gitHubReleaseAPI::release> releases, gitHubReleaseAPI::errors error, QVariant context);
     void logInfo(QString);
     void logError(QString);
     void downloadProgress(qint64 total, qint64 downloaded);
     void uploadProgress(qint64 total, qint64 uploaded);
+    void finishedAssetDownloadStep(QNetworkReply *reply);
 };
+Q_DECLARE_METATYPE(gitHubReleaseAPI::GitHubAsset)
+Q_DECLARE_METATYPE(gitHubReleaseAPI::release)
 
 #endif // GITHUBRELEASEAPI_H
